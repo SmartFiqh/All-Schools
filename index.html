@@ -1,15 +1,15 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>بيان - مرشد الآراء الفقهية</title>
-    <link rel="stylesheet" href="style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet">
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>بيان · مرشد الآراء الفقهية</title>
+    <link rel="stylesheet" href="style.css" />
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet" />
 </head>
 <body>
 
-    <!-- الشعار والهوية -->
+    <!-- ======== الهوية ======== -->
     <header class="header">
         <div class="container">
             <h1 class="logo">📖 بيان</h1>
@@ -18,80 +18,252 @@
         </div>
     </header>
 
-    <!-- المسائل الأكثر بحثاً -->
+    <!-- ======== الأكثر بحثًا ======== -->
     <section class="most-searched">
         <div class="container">
-            <h2>📈 الأكثر بحثًا:</h2>
+            <h2 class="section-title">📈 الأكثر بحثًا:</h2>
             <div class="chips">
-                <span class="chip">صلاة الجماعة</span>
-                <span class="chip">زكاة الأسهم</span>
-                <span class="chip">الجمع في السفر</span>
-                <span class="chip">نواقض الوضوء</span>
+                <span class="chip" data-query="صلاة الجماعة">صلاة الجماعة</span>
+                <span class="chip" data-query="زكاة الأسهم">زكاة الأسهم</span>
+                <span class="chip" data-query="الجمع في السفر">الجمع في السفر</span>
+                <span class="chip" data-query="نواقض الوضوء">نواقض الوضوء</span>
             </div>
         </div>
     </section>
 
-    <!-- شريط البحث -->
+    <!-- ======== البحث الذكي ======== -->
     <section class="search-section">
         <div class="container">
-            <label for="search">❓ ماذا تريد أن تعرف اليوم؟</label>
+            <label for="search" class="search-label">❓ ماذا تريد أن تعرف اليوم؟</label>
             <div class="search-box">
-                <input type="text" id="search" placeholder="ابحث عن مسألة...">
+                <input type="text" id="search" placeholder="اسأل بأي طريقة... سيفهمك التطبيق" />
                 <button id="searchBtn">🔍</button>
             </div>
+            <div id="ai-status" class="ai-status" style="display: none;">🧠 جاري تحليل سؤالك...</div>
             <p class="count">أكثر من ١٢٠ مسألة موثقة</p>
         </div>
     </section>
 
-    <!-- تصنيفات الموضوعات -->
+    <!-- ======== خيارات الإجابة ======== -->
+    <section class="answer-options">
+        <div class="container">
+            <h3 class="section-title">📝 اختر مستوى الإجابة:</h3>
+            <div class="answer-levels">
+                <button class="level-btn active" data-level="very_short">⚡ مختصرة جداً (كلمة واحدة)</button>
+                <button class="level-btn" data-level="short">📄 مختصرة (سطر واحد)</button>
+                <button class="level-btn" data-level="full">📚 كاملة (تفصيلية)</button>
+            </div>
+        </div>
+    </section>
+
+    <!-- ======== منطقة النتائج ======== -->
+    <section class="results-section" id="results">
+        <div class="container">
+            <div id="result-content">
+                <p class="placeholder">🔍 اكتب سؤالك في الأعلى للحصول على إجابة</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- ======== الموضوعات ======== -->
     <section class="categories">
         <div class="container">
-            <h2>✦ كل الموضوعات</h2>
+            <h2 class="section-title">✦ كل الموضوعات</h2>
             <div class="category-grid">
-                <div class="category-card">☽ العبادات</div>
-                <div class="category-card">◈ المعاملات</div>
-                <div class="category-card">⌂ الأسرة</div>
-                <div class="category-card">✧ الحياة اليومية</div>
+                <div class="category-card" data-category="العبادات">☽ العبادات</div>
+                <div class="category-card" data-category="المعاملات">◈ المعاملات</div>
+                <div class="category-card" data-category="الأسرة">⌂ الأسرة</div>
+                <div class="category-card" data-category="الحياة اليومية">✧ الحياة اليومية</div>
             </div>
         </div>
     </section>
 
-    <!-- خريطة الآراء (فلتر المذاهب) -->
+    <!-- ======== خريطة الآراء ======== -->
     <section class="madhhab-filter">
         <div class="container">
-            <h2>🗺️ خريطة الآراء</h2>
+            <h2 class="section-title">🗺️ خريطة الآراء</h2>
             <div class="madhhab-group">
-                <h3>المذاهب السنية</h3>
+                <h3 class="group-title">المذاهب السنية</h3>
                 <div class="madhhab-buttons">
-                    <button class="m-btn maliki">المالكي</button>
-                    <button class="m-btn shafii">الشافعي</button>
-                    <button class="m-btn hanbali">الحنبلي</button>
-                    <button class="m-btn hanafi">الحنفي</button>
-                    <button class="m-btn dhahiri">الظاهري</button>
+                    <button class="m-btn maliki" data-madhab="المالكي">المالكي</button>
+                    <button class="m-btn shafii" data-madhab="الشافعي">الشافعي</button>
+                    <button class="m-btn hanbali" data-madhab="الحنبلي">الحنبلي</button>
+                    <button class="m-btn hanafi" data-madhab="الحنفي">الحنفي</button>
+                    <button class="m-btn dhahiri" data-madhab="الظاهري">الظاهري</button>
                 </div>
             </div>
             <div class="madhhab-group">
-                <h3>المذاهب الشيعية</h3>
+                <h3 class="group-title">المذاهب الشيعية</h3>
                 <div class="madhhab-buttons">
-                    <button class="m-btn jafari">الجعفري الاثنا عشري</button>
-                    <button class="m-btn zaidi">الزيدي</button>
+                    <button class="m-btn jafari" data-madhab="الجعفري الاثنا عشري">الجعفري الاثنا عشري</button>
+                    <button class="m-btn zaidi" data-madhab="الزيدي">الزيدي</button>
                 </div>
             </div>
             <div class="madhhab-group">
-                <h3>المذهب الإباضي</h3>
+                <h3 class="group-title">المذهب الإباضي</h3>
                 <div class="madhhab-buttons">
-                    <button class="m-btn ibadi">الإباضي</button>
+                    <button class="m-btn ibadi" data-madhab="الإباضي">الإباضي</button>
                 </div>
             </div>
-            <button class="m-btn other">رأي آخر</button>
+            <div class="madhhab-group">
+                <button class="m-btn other" data-madhab="رأي آخر">رأي آخر</button>
+            </div>
         </div>
     </section>
 
-    <!-- التذييل -->
+    <!-- ======== الأئمة المؤسسون ======== -->
+    <section class="imams-section">
+        <div class="container">
+            <h2 class="section-title">📜 الأئمة المؤسسون</h2>
+            <div class="imams-grid">
+                <div class="imam-card">
+                    <h4>الإمام مالك بن أنس (93-179هـ)</h4>
+                    <p class="school-name">المذهب المالكي</p>
+                    <p class="scholars">أشهر العلماء: ابن القاسم، سحنون، ابن رشد، القرافي، خليل بن إسحاق</p>
+                </div>
+                <div class="imam-card">
+                    <h4>الإمام محمد بن إدريس الشافعي (150-204هـ)</h4>
+                    <p class="school-name">المذهب الشافعي</p>
+                    <p class="scholars">أشهر العلماء: المزني، البويطي، النووي، ابن حجر الهيتمي، الرافعي</p>
+                </div>
+                <div class="imam-card">
+                    <h4>الإمام أحمد بن حنبل (164-241هـ)</h4>
+                    <p class="school-name">المذهب الحنبلي</p>
+                    <p class="scholars">أشهر العلماء: أبو بكر الخلال، ابن قدامة، ابن تيمية، ابن القيم، محمد بن عبد الوهاب</p>
+                </div>
+                <div class="imam-card">
+                    <h4>الإمام أبو حنيفة النعمان (80-150هـ)</h4>
+                    <p class="school-name">المذهب الحنفي</p>
+                    <p class="scholars">أشهر العلماء: أبو يوسف، محمد بن الحسن الشيباني، الطحاوي، الكاساني، ابن عابدين</p>
+                </div>
+                <div class="imam-card">
+                    <h4>الإمام داود الظاهري (202-270هـ)</h4>
+                    <p class="school-name">المذهب الظاهري</p>
+                    <p class="scholars">أشهر العلماء: ابن حزم الأندلسي، عبد الله بن محمد القيرواني</p>
+                </div>
+                <div class="imam-card">
+                    <h4>الإمام جعفر الصادق (80-148هـ)</h4>
+                    <p class="school-name">المذهب الجعفري</p>
+                    <p class="scholars">أشهر العلماء: الشيخ المفيد، الشريف المرتضى، الشيخ الطوسي، المحقق الحلي، السيد الخميني، السيد السيستاني</p>
+                </div>
+                <div class="imam-card">
+                    <h4>الإمام زيد بن علي (80-122هـ)</h4>
+                    <p class="school-name">المذهب الزيدي</p>
+                    <p class="scholars">أشهر العلماء: أبو خالد الواسطي، الناصر الأطروش، الهادي يحيى بن الحسين، الإمام المنصور بالله</p>
+                </div>
+                <div class="imam-card">
+                    <h4>الإمام جابر بن زيد (القرن الأول-93هـ)</h4>
+                    <p class="school-name">المذهب الإباضي</p>
+                    <p class="scholars">أشهر العلماء: أبو سعيد الكدمي، أبو نزار الخروصي، نور الدين السالمي، الشيخ أحمد الخليلي</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ======== الدول والمذاهب الرسمية ======== -->
+    <section class="countries-section">
+        <div class="container">
+            <h2 class="section-title">🗺️ المذهب الرسمي السائد في الدول الإسلامية</h2>
+            <div class="countries-grid">
+                <div class="country-item">🇸🇦 السعودية - الحنبلي</div>
+                <div class="country-item">🇪🇬 مصر - الشافعي</div>
+                <div class="country-item">🇲🇦 المغرب - المالكي</div>
+                <div class="country-item">🇩🇿 الجزائر - المالكي</div>
+                <div class="country-item">🇹🇳 تونس - المالكي</div>
+                <div class="country-item">🇱🇾 ليبيا - المالكي</div>
+                <div class="country-item">🇲🇷 موريتانيا - المالكي</div>
+                <div class="country-item">🇸🇩 السودان - المالكي</div>
+                <div class="country-item">🇹🇷 تركيا - الحنفي</div>
+                <div class="country-item">🇸🇾 سوريا - الحنفي</div>
+                <div class="country-item">🇯🇴 الأردن - الحنفي</div>
+                <div class="country-item">🇵🇸 فلسطين - الحنفي</div>
+                <div class="country-item">🇮🇶 العراق - الجعفري/الحنفي</div>
+                <div class="country-item">🇮🇷 إيران - الجعفري</div>
+                <div class="country-item">🇾🇪 اليمن - الزيدي/الشافعي</div>
+                <div class="country-item">🇴🇲 عُمان - الإباضي</div>
+                <div class="country-item">🇶🇦 قطر - الحنبلي</div>
+                <div class="country-item">🇰🇼 الكويت - الحنفي</div>
+                <div class="country-item">🇧🇭 البحرين - الجعفري/الحنفي</div>
+                <div class="country-item">🇦🇪 الإمارات - المالكي</div>
+                <div class="country-item">🇵🇰 باكستان - الحنفي</div>
+                <div class="country-item">🇮🇳 الهند - الحنفي</div>
+                <div class="country-item">🇧🇩 بنغلاديش - الحنفي</div>
+                <div class="country-item">🇮🇩 إندونيسيا - الشافعي</div>
+                <div class="country-item">🇲🇾 ماليزيا - الشافعي</div>
+                <div class="country-item">🇸🇬 سنغافورة - الشافعي</div>
+                <div class="country-item">🇦🇫 أفغانستان - الحنفي</div>
+                <div class="country-item">🇺🇿 أوزبكستان - الحنفي</div>
+                <div class="country-item">🇰🇿 كازاخستان - الحنفي</div>
+                <div class="country-item">🇹🇯 طاجيكستان - الحنفي</div>
+                <div class="country-item">🇰🇬 قيرغيزستان - الحنفي</div>
+                <div class="country-item">🇹🇲 تركمانستان - الحنفي</div>
+                <div class="country-item">🇸🇴 الصومال - الشافعي</div>
+                <div class="country-item">🇩🇯 جيبوتي - الشافعي</div>
+                <div class="country-item">🇪🇷 إريتريا - الشافعي</div>
+                <div class="country-item">🇳🇬 نيجيريا - المالكي</div>
+                <div class="country-item">🇸🇳 السنغال - المالكي</div>
+                <div class="country-item">🇲🇱 مالي - المالكي</div>
+                <div class="country-item">🇹🇩 تشاد - المالكي</div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ======== قاموس المصطلحات ======== -->
+    <section class="glossary-section">
+        <div class="container">
+            <h2 class="section-title">📚 قاموس المصطلحات الفقهية</h2>
+            <div class="glossary-grid">
+                <div class="glossary-item">
+                    <h4>الحلال</h4>
+                    <p>ما أحله الله ورسوله، وثبوت حله في الكتاب والسنة، وفعله مباح لا إثم فيه، بل قد يثاب عليه الإنسان إذا نوى به التقوى أو العبادة. ومثاله: أكل الطعام الطيب، والنكاح، والتجارة المشروعة.</p>
+                </div>
+                <div class="glossary-item">
+                    <h4>الحرام</h4>
+                    <p>ما حرمه الله ورسوله بنص قطعي، وثبوت تحريمه في الكتاب أو السنة، وفاعله آثم مستحق للعقاب، وتاركه مثاب. ومثاله: شرب الخمر، والزنا، والربا، وأكل الميتة والدم ولحم الخنزير.</p>
+                </div>
+                <div class="glossary-item">
+                    <h4>المكروه</h4>
+                    <p>ما طلب الشارع تركه طلباً غير جازم، ويثاب تاركه تقرباً إلى الله، ولا يعاقب فاعله، لكن تركه أولى وأفضل. ينقسم إلى: مكروه تحريم (أقرب للحرام) ومكروه تنزيه (أقرب للمباح). ومثاله: الأكل بالشمال، أو الصلاة في وقت النهي دون عذر.</p>
+                </div>
+                <div class="glossary-item">
+                    <h4>المستحب (مندوب)</h4>
+                    <p>ما رغب الشارع في فعله دون إلزام، ويثاب فاعله امتثالاً لأمره، ولا يعاقب تاركه، وهو أوسع أبواب الطاعات. ومثاله: صلاة الضحى، وصيام التطوع، والصدقة، وقيام الليل.</p>
+                </div>
+                <div class="glossary-item">
+                    <h4>المندوب</h4>
+                    <p>مرادف للمستحب، وهو ما ندب الشرع إليه وحث عليه دون إيجاب، ويثاب فاعله ولا إثم على تاركه. ومثاله: الوتر عند غير الحنفية، والأضحية، والعمرة.</p>
+                </div>
+                <div class="glossary-item">
+                    <h4>السنة (غير المؤكدة)</h4>
+                    <p>ما فعله النبي ﷺ أحياناً وتركه أحياناً أخرى من غير مواظبة، وتركها لا إثم فيه ولا كراهة، وهي دون المؤكدة في الفضل. ومثاله: سنة الظهر القبلية، أو سنة المغرب البعدية.</p>
+                </div>
+                <div class="glossary-item">
+                    <h4>السنة المؤكدة</h4>
+                    <p>ما واظب النبي ﷺ على فعله في الغالب، وتركه أحياناً قليلاً، وتركها مكروه عند الحنفية، ويثاب فاعلها ولا يعاقب تاركها عند الجمهور. ومثاله: سنة الفجر القبلية، وسنة الظهر القبلية والبعدية.</p>
+                </div>
+                <div class="glossary-item">
+                    <h4>الفرض (فرض عين)</h4>
+                    <p>ما طلب الشارع فعله طلباً جازماً على كل مكلف شخصياً، ويثاب فاعله ويعاقب تاركه، وهو أعلى مراتب التكليف. ومثاله: الصلوات الخمس، وصوم رمضان، وحج البيت لمن استطاع إليه سبيلاً.</p>
+                </div>
+                <div class="glossary-item">
+                    <h4>فرض الكفاية</h4>
+                    <p>ما طلب الشارع فعله طلباً جازماً على عموم المكلفين، ويسقط عن الجميع بفعل البعض، ويأثم الجميع إن تركه الكل. ومثاله: صلاة الجنازة، والأمر بالمعروف والنهي عن المنكر، وتعلم العلوم الشرعية والطبية.</p>
+                </div>
+                <div class="glossary-item">
+                    <h4>الواجب (عند الحنفية)</h4>
+                    <p>عند الحنفية: ما ثبت بدليل ظني (كصلاة الوتر، وصلاة العيدين، وأضحية العيد)، وتركه يستحق العقاب لكن لا يكفر به. عند الجمهور: مرادف للفرض تماماً.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ======== التذييل ======== -->
     <footer class="footer">
         <div class="container">
-            <p>المعرفة أمانة. نراجع كل مادة من مصادرها الأصلية، ونوضح مواضع الاتفاق والاختلاف بإنصاف.</p>
-            <a href="#" class="link">تعرّف على منهجيتنا →</a>
+            <p class="footer-message">
+                المعرفة أمانة. نراجع كل مادة من مصادرها الأصلية، ونوضح مواضع الاتفاق والاختلاف بإنصاف.
+            </p>
+            <a href="#" class="footer-link">تعرّف على منهجيتنا →</a>
             <p class="copyright">© ٢٠٢٤ بيان</p>
         </div>
     </footer>
