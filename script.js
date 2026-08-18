@@ -562,4 +562,67 @@ document.addEventListener('DOMContentLoaded', function() {
             const query = this.dataset.query || this.textContent.trim();
             if (searchInput) {
                 searchInput.value = query;
-                smartSearch(query
+                smartSearch(query);
+            }
+        });
+    });
+
+    // 5.6 ربط أحداث المذاهب
+    document.querySelectorAll('.m-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const madhab = this.dataset.madhab || this.textContent.trim();
+            // محاكاة فلتر المذاهب: نبحث في البيانات
+            const results = issuesData.filter(issue =>
+                issue.rulings.full.includes(madhab) ||
+                issue.title.includes(madhab)
+            );
+            if (results.length > 0) {
+                currentResults = results;
+                displayResults(results);
+            } else {
+                // عرض رسالة في حال لم نجد نتائج
+                const container = document.getElementById('result-content');
+                if (container) {
+                    container.innerHTML = `<p class="placeholder">🔍 لا توجد مسائل مسجلة للمذهب "${madhab}" حالياً.</p>`;
+                }
+            }
+        });
+    });
+
+    // 5.7 ربط أحداث التصنيفات
+    document.querySelectorAll('.category-card').forEach(card => {
+        card.addEventListener('click', function() {
+            const category = this.dataset.category || this.textContent.trim();
+            const results = issuesData.filter(issue => issue.category === category);
+            if (results.length > 0) {
+                currentResults = results;
+                displayResults(results);
+            } else {
+                const container = document.getElementById('result-content');
+                if (container) {
+                    container.innerHTML = `<p class="placeholder">🔍 لا توجد مسائل في تصنيف "${category}" حالياً.</p>`;
+                }
+            }
+        });
+    });
+
+    // 5.8 ربط أحداث مستويات الإجابة
+    document.querySelectorAll('.level-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const level = this.dataset.level;
+            if (level) setAnswerLevel(level);
+        });
+    });
+
+    // 5.9 ربط قائمة اللغة
+    const langSelect = document.getElementById('language-select');
+    if (langSelect) {
+        langSelect.addEventListener('change', function() {
+            setLanguage(this.value);
+        });
+    }
+
+    // 5.10 عرض رسالة ترحيب
+    console.log('📖 بيان - مرشد الآراء الفقهية');
+    console.log('✅ التطبيق جاهز للاستخدام');
+});
