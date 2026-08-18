@@ -9,7 +9,7 @@
 </head>
 <body>
 
-    <!-- ======== الهوية ======== -->
+    <!-- ======== رأس الصفحة - الهوية ======== -->
     <header class="header">
         <div class="container">
             <h1 class="logo">📖 بيان</h1>
@@ -78,10 +78,12 @@
         </div>
     </section>
 
-    <!-- ======== خريطة الآراء ======== -->
+    <!-- ======== خريطة الآراء (المذاهب) ======== -->
     <section class="madhhab-filter">
         <div class="container">
             <h2 class="section-title">🗺️ خريطة الآراء</h2>
+            
+            <!-- المذاهب السنية -->
             <div class="madhhab-group">
                 <h3 class="group-title">المذاهب السنية</h3>
                 <div class="madhhab-buttons">
@@ -92,6 +94,8 @@
                     <button class="m-btn dhahiri" data-madhab="الظاهري">الظاهري</button>
                 </div>
             </div>
+
+            <!-- المذاهب الشيعية -->
             <div class="madhhab-group">
                 <h3 class="group-title">المذاهب الشيعية</h3>
                 <div class="madhhab-buttons">
@@ -99,12 +103,16 @@
                     <button class="m-btn zaidi" data-madhab="الزيدي">الزيدي</button>
                 </div>
             </div>
+
+            <!-- المذهب الإباضي -->
             <div class="madhhab-group">
                 <h3 class="group-title">المذهب الإباضي</h3>
                 <div class="madhhab-buttons">
                     <button class="m-btn ibadi" data-madhab="الإباضي">الإباضي</button>
                 </div>
             </div>
+
+            <!-- رأي آخر -->
             <div class="madhhab-group">
                 <button class="m-btn other" data-madhab="رأي آخر">رأي آخر</button>
             </div>
@@ -164,46 +172,8 @@
     <section class="countries-section">
         <div class="container">
             <h2 class="section-title">🗺️ المذهب الرسمي السائد في الدول الإسلامية</h2>
-            <div class="countries-grid">
-                <div class="country-item">🇸🇦 السعودية - الحنبلي</div>
-                <div class="country-item">🇪🇬 مصر - الشافعي</div>
-                <div class="country-item">🇲🇦 المغرب - المالكي</div>
-                <div class="country-item">🇩🇿 الجزائر - المالكي</div>
-                <div class="country-item">🇹🇳 تونس - المالكي</div>
-                <div class="country-item">🇱🇾 ليبيا - المالكي</div>
-                <div class="country-item">🇲🇷 موريتانيا - المالكي</div>
-                <div class="country-item">🇸🇩 السودان - المالكي</div>
-                <div class="country-item">🇹🇷 تركيا - الحنفي</div>
-                <div class="country-item">🇸🇾 سوريا - الحنفي</div>
-                <div class="country-item">🇯🇴 الأردن - الحنفي</div>
-                <div class="country-item">🇵🇸 فلسطين - الحنفي</div>
-                <div class="country-item">🇮🇶 العراق - الجعفري/الحنفي</div>
-                <div class="country-item">🇮🇷 إيران - الجعفري</div>
-                <div class="country-item">🇾🇪 اليمن - الزيدي/الشافعي</div>
-                <div class="country-item">🇴🇲 عُمان - الإباضي</div>
-                <div class="country-item">🇶🇦 قطر - الحنبلي</div>
-                <div class="country-item">🇰🇼 الكويت - الحنفي</div>
-                <div class="country-item">🇧🇭 البحرين - الجعفري/الحنفي</div>
-                <div class="country-item">🇦🇪 الإمارات - المالكي</div>
-                <div class="country-item">🇵🇰 باكستان - الحنفي</div>
-                <div class="country-item">🇮🇳 الهند - الحنفي</div>
-                <div class="country-item">🇧🇩 بنغلاديش - الحنفي</div>
-                <div class="country-item">🇮🇩 إندونيسيا - الشافعي</div>
-                <div class="country-item">🇲🇾 ماليزيا - الشافعي</div>
-                <div class="country-item">🇸🇬 سنغافورة - الشافعي</div>
-                <div class="country-item">🇦🇫 أفغانستان - الحنفي</div>
-                <div class="country-item">🇺🇿 أوزبكستان - الحنفي</div>
-                <div class="country-item">🇰🇿 كازاخستان - الحنفي</div>
-                <div class="country-item">🇹🇯 طاجيكستان - الحنفي</div>
-                <div class="country-item">🇰🇬 قيرغيزستان - الحنفي</div>
-                <div class="country-item">🇹🇲 تركمانستان - الحنفي</div>
-                <div class="country-item">🇸🇴 الصومال - الشافعي</div>
-                <div class="country-item">🇩🇯 جيبوتي - الشافعي</div>
-                <div class="country-item">🇪🇷 إريتريا - الشافعي</div>
-                <div class="country-item">🇳🇬 نيجيريا - المالكي</div>
-                <div class="country-item">🇸🇳 السنغال - المالكي</div>
-                <div class="country-item">🇲🇱 مالي - المالكي</div>
-                <div class="country-item">🇹🇩 تشاد - المالكي</div>
+            <div class="countries-grid" id="countries-grid">
+                <!-- سيتم تعبئتها بواسطة JavaScript من ملف JSON -->
             </div>
         </div>
     </section>
@@ -212,47 +182,8 @@
     <section class="glossary-section">
         <div class="container">
             <h2 class="section-title">📚 قاموس المصطلحات الفقهية</h2>
-            <div class="glossary-grid">
-                <div class="glossary-item">
-                    <h4>الحلال</h4>
-                    <p>ما أحله الله ورسوله، وثبوت حله في الكتاب والسنة، وفعله مباح لا إثم فيه، بل قد يثاب عليه الإنسان إذا نوى به التقوى أو العبادة. ومثاله: أكل الطعام الطيب، والنكاح، والتجارة المشروعة.</p>
-                </div>
-                <div class="glossary-item">
-                    <h4>الحرام</h4>
-                    <p>ما حرمه الله ورسوله بنص قطعي، وثبوت تحريمه في الكتاب أو السنة، وفاعله آثم مستحق للعقاب، وتاركه مثاب. ومثاله: شرب الخمر، والزنا، والربا، وأكل الميتة والدم ولحم الخنزير.</p>
-                </div>
-                <div class="glossary-item">
-                    <h4>المكروه</h4>
-                    <p>ما طلب الشارع تركه طلباً غير جازم، ويثاب تاركه تقرباً إلى الله، ولا يعاقب فاعله، لكن تركه أولى وأفضل. ينقسم إلى: مكروه تحريم (أقرب للحرام) ومكروه تنزيه (أقرب للمباح). ومثاله: الأكل بالشمال، أو الصلاة في وقت النهي دون عذر.</p>
-                </div>
-                <div class="glossary-item">
-                    <h4>المستحب (مندوب)</h4>
-                    <p>ما رغب الشارع في فعله دون إلزام، ويثاب فاعله امتثالاً لأمره، ولا يعاقب تاركه، وهو أوسع أبواب الطاعات. ومثاله: صلاة الضحى، وصيام التطوع، والصدقة، وقيام الليل.</p>
-                </div>
-                <div class="glossary-item">
-                    <h4>المندوب</h4>
-                    <p>مرادف للمستحب، وهو ما ندب الشرع إليه وحث عليه دون إيجاب، ويثاب فاعله ولا إثم على تاركه. ومثاله: الوتر عند غير الحنفية، والأضحية، والعمرة.</p>
-                </div>
-                <div class="glossary-item">
-                    <h4>السنة (غير المؤكدة)</h4>
-                    <p>ما فعله النبي ﷺ أحياناً وتركه أحياناً أخرى من غير مواظبة، وتركها لا إثم فيه ولا كراهة، وهي دون المؤكدة في الفضل. ومثاله: سنة الظهر القبلية، أو سنة المغرب البعدية.</p>
-                </div>
-                <div class="glossary-item">
-                    <h4>السنة المؤكدة</h4>
-                    <p>ما واظب النبي ﷺ على فعله في الغالب، وتركه أحياناً قليلاً، وتركها مكروه عند الحنفية، ويثاب فاعلها ولا يعاقب تاركها عند الجمهور. ومثاله: سنة الفجر القبلية، وسنة الظهر القبلية والبعدية.</p>
-                </div>
-                <div class="glossary-item">
-                    <h4>الفرض (فرض عين)</h4>
-                    <p>ما طلب الشارع فعله طلباً جازماً على كل مكلف شخصياً، ويثاب فاعله ويعاقب تاركه، وهو أعلى مراتب التكليف. ومثاله: الصلوات الخمس، وصوم رمضان، وحج البيت لمن استطاع إليه سبيلاً.</p>
-                </div>
-                <div class="glossary-item">
-                    <h4>فرض الكفاية</h4>
-                    <p>ما طلب الشارع فعله طلباً جازماً على عموم المكلفين، ويسقط عن الجميع بفعل البعض، ويأثم الجميع إن تركه الكل. ومثاله: صلاة الجنازة، والأمر بالمعروف والنهي عن المنكر، وتعلم العلوم الشرعية والطبية.</p>
-                </div>
-                <div class="glossary-item">
-                    <h4>الواجب (عند الحنفية)</h4>
-                    <p>عند الحنفية: ما ثبت بدليل ظني (كصلاة الوتر، وصلاة العيدين، وأضحية العيد)، وتركه يستحق العقاب لكن لا يكفر به. عند الجمهور: مرادف للفرض تماماً.</p>
-                </div>
+            <div class="glossary-grid" id="glossary-grid">
+                <!-- سيتم تعبئتها بواسطة JavaScript من ملف JSON -->
             </div>
         </div>
     </section>
