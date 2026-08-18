@@ -1,3 +1,4 @@
 Flask
 flask-cors
 python-dotenv
+streamlit==1.31.1
