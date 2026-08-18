@@ -1,7 +1,6 @@
 # ============================================================
 # 📖 بيان - التطبيق الرئيسي (app.py)
 # مرشد الآراء الفقهية
-# إصدار خادم Flask مع دعم API والواجهة الخلفية
 # ============================================================
 
 import os
@@ -15,7 +14,7 @@ from dotenv import load_dotenv
 # تحميل المتغيرات البيئية
 load_dotenv()
 
-# إعداد التسجيل (Logging)
+# إعداد التسجيل
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -23,56 +22,13 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ============================================================
-# 1.  تهيئة التطبيق
+# 1. تهيئة التطبيق
 # ============================================================
-app = Flask(__name__, 
-            static_folder='.',
-            template_folder='.')
-CORS(app)  # تمكين CORS للسماح بالاتصال من أي نطاق
+app = Flask(__name__, static_folder='.', template_folder='.')
+CORS(app)
 
 # ============================================================
-# 2.  تحميل البيانات
-# ============================================================
-
-def load_json_file(filename):
-    """تحميل ملف JSON بأمان"""
-    try:
-        with open(filename, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except FileNotFoundError:
-        logger.warning(f"⚠️ ملف {filename} غير موجود")
-        return {}
-    except json.JSONDecodeError as e:
-        logger.error(f"❌ خطأ في قراءة {filename}: {e}")
-        return {}
-
-# تحميل الترجمات
-translations = {}
-locales_dir = 'locales'
-if os.path.exists(locales_dir):
-    for filename in os.listdir(locales_dir):
-        if filename.endswith('.json'):
-            lang_code = filename.replace('.json', '')
-            translations[lang_code] = load_json_file(os.path.join(locales_dir, filename))
-
-# تحميل البيانات الأخرى
-issues_data = load_json_file('data/issues.json')
-glossary_terms = load_json_file('data/glossary.json')
-countries_data = load_json_file('data/countries.json')
-imams_data = load_json_file('data/imams.json')
-
-# إذا لم توجد الملفات، استخدم البيانات المضمنة
-if not issues_data:
-    issues_data = get_default_issues()
-if not glossary_terms:
-    glossary_terms = get_default_glossary()
-if not countries_data:
-    countries_data = get_default_countries()
-if not imams_data:
-    imams_data = get_default_imams()
-
-# ============================================================
-# 3.  البيانات الافتراضية (في حال عدم وجود ملفات)
+# 2. البيانات الافتراضية (يجب تعريفها أولاً)
 # ============================================================
 
 def get_default_issues():
@@ -110,28 +66,6 @@ def get_default_issues():
                 "full": "يجوز للمسافر جمع صلاة الظهر مع العصر، والمغرب مع العشاء، تقديماً أو تأخيراً، في وقت إحداهما، وذلك تخفيفاً من الله تعالى على المسافرين."
             },
             "keywords": ["جمع", "سفر", "مسافر", "صلاة", "تخفيف", "رخصة"]
-        },
-        {
-            "id": 4,
-            "title": "نواقض الوضوء",
-            "category": "العبادات",
-            "rulings": {
-                "very_short": "مبطل",
-                "short": "نواقض الوضوء تبطل الطهارة وتوجب إعادته",
-                "full": "نواقض الوضوء هي: الخارج من السبيلين (البول، الغائط، الريح)، النوم المستغرق، زوال العقل (بإغماء أو سكر)، مسّ الفرج بغير حائل، ولمس المرأة بشهوة عند بعض المذاهب."
-            },
-            "keywords": ["وضوء", "نواقض", "طهارة", "بول", "غائط", "نوم", "مس"]
-        },
-        {
-            "id": 5,
-            "title": "الربا",
-            "category": "المعاملات",
-            "rulings": {
-                "very_short": "حرام",
-                "short": "الربا من كبائر الذنوب ومحرم قطعاً",
-                "full": "الربا محرم بنص القرآن والسنة، وهو كل زيادة مشروطة في القرض أو المعاملة، سواء كانت نقدية أو عينية. الربا من السبع الموبقات، والله ورسوله حاربا من يتعامل به."
-            },
-            "keywords": ["ربا", "حرام", "قرض", "فائدة", "بنوك", "معاملة", "ذنب"]
         }
     ]
 
@@ -166,7 +100,55 @@ def get_default_imams():
     ]
 
 # ============================================================
-# 4.  دوال المساعدة (Utilities)
+# 3. تحميل البيانات (بعد تعريف الدوال)
+# ============================================================
+
+def load_json_file(filename):
+    """تحميل ملف JSON بأمان"""
+    try:
+        with open(filename, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        logger.warning(f"⚠️ ملف {filename} غير موجود")
+        return None
+    except json.JSONDecodeError as e:
+        logger.error(f"❌ خطأ في قراءة {filename}: {e}")
+        return None
+
+# تحميل البيانات من الملفات أو استخدام الافتراضية
+issues_data = load_json_file('data/issues.json')
+if not issues_data:
+    issues_data = get_default_issues()
+    logger.info("✅ تم استخدام البيانات الافتراضية للمسائل")
+
+glossary_terms = load_json_file('data/glossary.json')
+if not glossary_terms:
+    glossary_terms = get_default_glossary()
+    logger.info("✅ تم استخدام البيانات الافتراضية للمصطلحات")
+
+countries_data = load_json_file('data/countries.json')
+if not countries_data:
+    countries_data = get_default_countries()
+    logger.info("✅ تم استخدام البيانات الافتراضية للدول")
+
+imams_data = load_json_file('data/imams.json')
+if not imams_data:
+    imams_data = get_default_imams()
+    logger.info("✅ تم استخدام البيانات الافتراضية للأئمة")
+
+# تحميل الترجمات
+translations = {}
+locales_dir = 'locales'
+if os.path.exists(locales_dir):
+    for filename in os.listdir(locales_dir):
+        if filename.endswith('.json'):
+            lang_code = filename.replace('.json', '')
+            translations[lang_code] = load_json_file(os.path.join(locales_dir, filename))
+            if translations[lang_code]:
+                logger.info(f"✅ تم تحميل ترجمة {lang_code}")
+
+# ============================================================
+# 4. دوال المساعدة
 # ============================================================
 
 def search_issues(query, language='ar', level='full'):
@@ -178,16 +160,12 @@ def search_issues(query, language='ar', level='full'):
     results = []
     
     for issue in issues_data:
-        # البحث في العنوان والكلمات المفتاحية
         title_match = query in issue.get('title', '').lower()
         keyword_match = any(query in kw.lower() for kw in issue.get('keywords', []))
-        
-        # البحث في النص الكامل (للإجابات المطولة)
         full_text = issue.get('rulings', {}).get('full', '').lower()
         full_match = query in full_text
         
         if title_match or keyword_match or full_match:
-            # استخراج الإجابة حسب المستوى المطلوب
             rulings = issue.get('rulings', {})
             answer = rulings.get(level, rulings.get('full', 'لا توجد إجابة'))
             
@@ -201,16 +179,8 @@ def search_issues(query, language='ar', level='full'):
     
     return results
 
-def get_translation(lang, key, default=''):
-    """الحصول على ترجمة"""
-    if lang in translations and key in translations[lang]:
-        return translations[lang][key]
-    if 'ar' in translations and key in translations['ar']:
-        return translations['ar'][key]
-    return default
-
 # ============================================================
-# 5.  واجهات API
+# 5. واجهات API
 # ============================================================
 
 @app.route('/')
@@ -220,43 +190,22 @@ def index():
 
 @app.route('/style.css')
 def serve_css():
-    """ملف التنسيقات"""
     return send_from_directory('.', 'style.css')
 
 @app.route('/script.js')
 def serve_js():
-    """ملف جافا سكريبت"""
     return send_from_directory('.', 'script.js')
 
 @app.route('/locales/<lang>.json')
 def serve_locale(lang):
-    """ملفات الترجمات"""
     return send_from_directory('locales', f'{lang}.json')
-
-# ============================================================
-# 6.  واجهات API للبيانات
-# ============================================================
 
 @app.route('/api/issues', methods=['GET'])
 def api_get_issues():
-    """جلب جميع المسائل"""
-    return jsonify({
-        'success': True,
-        'data': issues_data,
-        'count': len(issues_data)
-    })
-
-@app.route('/api/issues/<int:issue_id>', methods=['GET'])
-def api_get_issue(issue_id):
-    """جلب مسألة محددة بالمعرف"""
-    for issue in issues_data:
-        if issue.get('id') == issue_id:
-            return jsonify({'success': True, 'data': issue})
-    return jsonify({'success': False, 'error': 'المسألة غير موجودة'}), 404
+    return jsonify({'success': True, 'data': issues_data, 'count': len(issues_data)})
 
 @app.route('/api/search', methods=['GET', 'POST'])
 def api_search():
-    """البحث في المسائل"""
     if request.method == 'POST':
         data = request.get_json() or {}
         query = data.get('query', '')
@@ -268,52 +217,25 @@ def api_search():
         level = request.args.get('level', 'full')
     
     if not query:
-        return jsonify({
-            'success': False,
-            'error': 'الرجاء إدخال نص للبحث'
-        }), 400
+        return jsonify({'success': False, 'error': 'الرجاء إدخال نص للبحث'}), 400
     
     results = search_issues(query, language, level)
-    
-    return jsonify({
-        'success': True,
-        'results': results,
-        'count': len(results),
-        'query': query,
-        'language': language,
-        'level': level
-    })
+    return jsonify({'success': True, 'results': results, 'count': len(results)})
 
 @app.route('/api/glossary', methods=['GET'])
 def api_get_glossary():
-    """جلب قاموس المصطلحات"""
-    return jsonify({
-        'success': True,
-        'data': glossary_terms,
-        'count': len(glossary_terms)
-    })
+    return jsonify({'success': True, 'data': glossary_terms, 'count': len(glossary_terms)})
 
 @app.route('/api/countries', methods=['GET'])
 def api_get_countries():
-    """جلب الدول والمذاهب"""
-    return jsonify({
-        'success': True,
-        'data': countries_data,
-        'count': len(countries_data)
-    })
+    return jsonify({'success': True, 'data': countries_data, 'count': len(countries_data)})
 
 @app.route('/api/imams', methods=['GET'])
 def api_get_imams():
-    """جلب الأئمة المؤسسين"""
-    return jsonify({
-        'success': True,
-        'data': imams_data,
-        'count': len(imams_data)
-    })
+    return jsonify({'success': True, 'data': imams_data, 'count': len(imams_data)})
 
 @app.route('/api/languages', methods=['GET'])
 def api_get_languages():
-    """جلب قائمة اللغات المدعومة"""
     languages = [
         {'code': 'ar', 'name': 'العربية', 'flag': '🇸🇦'},
         {'code': 'en', 'name': 'English', 'flag': '🇬🇧'},
@@ -324,24 +246,11 @@ def api_get_languages():
     ]
     return jsonify({'success': True, 'data': languages})
 
-@app.route('/api/translations/<lang>', methods=['GET'])
-def api_get_translations(lang):
-    """جلب ترجمات لغة محددة"""
-    if lang in translations:
-        return jsonify({'success': True, 'data': translations[lang]})
-    return jsonify({'success': False, 'error': 'اللغة غير مدعومة'}), 404
-
-# ============================================================
-# 7.  الصحة والمراقبة
-# ============================================================
-
 @app.route('/api/health', methods=['GET'])
 def api_health():
-    """فحص صحة الخادم"""
     return jsonify({
         'status': 'healthy',
         'timestamp': datetime.now().isoformat(),
-        'version': '1.0.0',
         'data': {
             'issues': len(issues_data),
             'glossary': len(glossary_terms),
@@ -351,43 +260,8 @@ def api_health():
         }
     })
 
-@app.route('/api/stats', methods=['GET'])
-def api_stats():
-    """إحصائيات التطبيق"""
-    return jsonify({
-        'success': True,
-        'stats': {
-            'total_issues': len(issues_data),
-            'total_glossary': len(glossary_terms),
-            'total_countries': len(countries_data),
-            'total_imams': len(imams_data),
-            'total_languages': len(translations),
-            'issues_by_category': {
-                'العبادات': len([i for i in issues_data if i.get('category') == 'العبادات']),
-                'المعاملات': len([i for i in issues_data if i.get('category') == 'المعاملات']),
-                'الأسرة': len([i for i in issues_data if i.get('category') == 'الأسرة']),
-                'الحياة اليومية': len([i for i in issues_data if i.get('category') == 'الحياة اليومية'])
-            }
-        }
-    })
-
 # ============================================================
-# 8.  معالجة الأخطاء
-# ============================================================
-
-@app.errorhandler(404)
-def not_found(error):
-    """صفحة 404"""
-    return jsonify({'success': False, 'error': 'الصفحة غير موجودة'}), 404
-
-@app.errorhandler(500)
-def internal_error(error):
-    """خطأ داخلي"""
-    logger.error(f"❌ خطأ داخلي: {error}")
-    return jsonify({'success': False, 'error': 'حدث خطأ داخلي في الخادم'}), 500
-
-# ============================================================
-# 9.  تشغيل التطبيق
+# 6. تشغيل التطبيق
 # ============================================================
 
 if __name__ == '__main__':
@@ -395,11 +269,9 @@ if __name__ == '__main__':
     debug = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
     
     logger.info(f"🚀 تشغيل تطبيق بيان على المنفذ {port}")
-    logger.info(f"🔧 وضع التصحيح: {debug}")
     logger.info(f"📚 عدد المسائل: {len(issues_data)}")
     logger.info(f"📖 عدد المصطلحات: {len(glossary_terms)}")
     logger.info(f"🌍 عدد الدول: {len(countries_data)}")
     logger.info(f"🕌 عدد الأئمة: {len(imams_data)}")
-    logger.info(f"🌐 عدد اللغات: {len(translations)}")
     
     app.run(host='0.0.0.0', port=port, debug=debug)
