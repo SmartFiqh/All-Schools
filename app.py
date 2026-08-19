@@ -1,3 +1,4 @@
+# app.py
 import streamlit as st
 import re
 import sqlite3
@@ -7,6 +8,18 @@ import csv
 import io
 import datetime
 import numpy as np
+from typing import List, Dict, Optional, Any, Tuple
+from dataclasses import dataclass, asdict
+import hashlib
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# ============================================
+# Configuration & Environment Setup
+# ============================================
 
 try:
     from dotenv import load_dotenv
@@ -22,82 +35,171 @@ except ImportError:
     genai = None
     GENAI_AVAILABLE = False
 
-def get_gemini_api_key():
+
+def get_gemini_api_key() -> Optional[str]:
+    """Get Gemini API key from multiple sources with priority."""
+    # Priority 1: Streamlit secrets
     try:
         return st.secrets["GEMINI_API_KEY"]
     except (KeyError, AttributeError):
         pass
+    
+    # Priority 2: Environment variables
     if DOTENV_AVAILABLE:
         return os.getenv("GEMINI_API_KEY")
+    
     return None
+
 
 GEMINI_API_KEY = get_gemini_api_key()
 USE_GEMINI = GEMINI_API_KEY is not None and GENAI_AVAILABLE
+
 if USE_GEMINI:
     try:
         genai.configure(api_key=GEMINI_API_KEY)
         model = genai.GenerativeModel('gemini-1.5-flash')
-    except Exception:
+        logger.info("Gemini AI initialized successfully")
+    except Exception as e:
         USE_GEMINI = False
+        logger.error(f"Failed to initialize Gemini: {e}")
 
 DB_PATH = "fiqh.db"
+EMBED_MODEL = "models/text-embedding-004"
 
-def init_db():
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS issues (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            topic TEXT,
-            title_ar TEXT, title_en TEXT, title_fr TEXT, title_fa TEXT, title_ms TEXT, title_ur TEXT,
-            keywords_ar TEXT, keywords_en TEXT, keywords_fr TEXT, keywords_fa TEXT, keywords_ms TEXT, keywords_ur TEXT,
-            ruling_vs_ar TEXT, ruling_s_ar TEXT, ruling_f_ar TEXT,
-            ruling_vs_en TEXT, ruling_s_en TEXT, ruling_f_en TEXT,
-            ruling_vs_fr TEXT, ruling_s_fr TEXT, ruling_f_fr TEXT,
-            ruling_vs_fa TEXT, ruling_s_fa TEXT, ruling_f_fa TEXT,
-            ruling_vs_ms TEXT, ruling_s_ms TEXT, ruling_f_ms TEXT,
-            ruling_vs_ur TEXT, ruling_s_ur TEXT, ruling_f_ur TEXT,
-            rulings_by_madhab_ar JSON, rulings_by_madhab_en JSON, rulings_by_madhab_fr JSON,
-            rulings_by_madhab_fa JSON, rulings_by_madhab_ms JSON, rulings_by_madhab_ur JSON
-        )
-    ''')
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS reference_chunks (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            source_title TEXT,
-            madhab_tag TEXT,
-            chunk_text TEXT,
-            embedding JSON,
-            added_at TEXT
-        )
-    ''')
-    conn.commit()
-    conn.close()
+# ============================================
+# Data Classes for Type Safety
+# ============================================
 
-def ensure_reference_table():
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("PRAGMA table_info(reference_chunks)")
-    columns = [col[1] for col in c.fetchall()]
-    if 'source_title' not in columns:
-        c.execute("ALTER TABLE reference_chunks ADD COLUMN source_title TEXT")
-    if 'madhab_tag' not in columns:
-        c.execute("ALTER TABLE reference_chunks ADD COLUMN madhab_tag TEXT")
-    if 'added_at' not in columns:
-        c.execute("ALTER TABLE reference_chunks ADD COLUMN added_at TEXT")
-    conn.commit()
-    conn.close()
+@dataclass
+class Issue:
+    """Represents a fiqh issue with multilingual content."""
+    id: int
+    topic: str
+    title: str
+    keywords: List[str]
+    rulings: Dict[str, str]
+    rulings_by_madhab: Dict[str, Dict[str, str]]
+    
+    def get_ruling(self, level: str = "full") -> str:
+        """Get ruling at specified detail level."""
+        return self.rulings.get(level, self.rulings.get("full", ""))
 
-def seed_initial_issues():
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("SELECT COUNT(*) FROM issues")
-    if c.fetchone()[0] > 0:
-        conn.close()
-        return
+@dataclass
+class ReferenceChunk:
+    """Represents a chunk of reference text with embedding."""
+    id: int
+    source_title: str
+    madhab_tag: str
+    chunk_text: str
+    embedding: List[float]
+    added_at: str
 
-    issues = [
-        {
+@dataclass
+class SearchResult:
+    """Represents a search result with madhab cards."""
+    title: str
+    topic: str
+    cards: List[Dict[str, str]]
+
+# ============================================
+# Database Layer
+# ============================================
+
+class DatabaseManager:
+    """Manages database operations with connection pooling and error handling."""
+    
+    def __init__(self, db_path: str = DB_PATH):
+        self.db_path = db_path
+        self._init_db()
+        self._ensure_reference_table()
+        self._seed_initial_issues()
+    
+    def _get_connection(self) -> sqlite3.Connection:
+        """Get database connection with proper settings."""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        return conn
+    
+    def _init_db(self) -> None:
+        """Initialize database tables."""
+        with self._get_connection() as conn:
+            c = conn.cursor()
+            
+            # Issues table
+            c.execute('''
+                CREATE TABLE IF NOT EXISTS issues (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    topic TEXT,
+                    title_ar TEXT, title_en TEXT, title_fr TEXT, 
+                    title_fa TEXT, title_ms TEXT, title_ur TEXT,
+                    keywords_ar TEXT, keywords_en TEXT, keywords_fr TEXT, 
+                    keywords_fa TEXT, keywords_ms TEXT, keywords_ur TEXT,
+                    ruling_vs_ar TEXT, ruling_s_ar TEXT, ruling_f_ar TEXT,
+                    ruling_vs_en TEXT, ruling_s_en TEXT, ruling_f_en TEXT,
+                    ruling_vs_fr TEXT, ruling_s_fr TEXT, ruling_f_fr TEXT,
+                    ruling_vs_fa TEXT, ruling_s_fa TEXT, ruling_f_fa TEXT,
+                    ruling_vs_ms TEXT, ruling_s_ms TEXT, ruling_f_ms TEXT,
+                    ruling_vs_ur TEXT, ruling_s_ur TEXT, ruling_f_ur TEXT,
+                    rulings_by_madhab_ar JSON, rulings_by_madhab_en JSON, 
+                    rulings_by_madhab_fr JSON, rulings_by_madhab_fa JSON, 
+                    rulings_by_madhab_ms JSON, rulings_by_madhab_ur JSON,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
+            # Reference chunks table
+            c.execute('''
+                CREATE TABLE IF NOT EXISTS reference_chunks (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    source_title TEXT,
+                    madhab_tag TEXT,
+                    chunk_text TEXT,
+                    embedding JSON,
+                    added_at TEXT,
+                    chunk_hash TEXT UNIQUE
+                )
+            ''')
+            
+            # Indexes for performance
+            c.execute('CREATE INDEX IF NOT EXISTS idx_issues_topic ON issues(topic)')
+            c.execute('CREATE INDEX IF NOT EXISTS idx_chunks_source ON reference_chunks(source_title)')
+            c.execute('CREATE INDEX IF NOT EXISTS idx_chunks_madhab ON reference_chunks(madhab_tag)')
+            
+            conn.commit()
+    
+    def _ensure_reference_table(self) -> None:
+        """Ensure reference table has all required columns."""
+        with self._get_connection() as conn:
+            c = conn.cursor()
+            c.execute("PRAGMA table_info(reference_chunks)")
+            columns = [col[1] for col in c.fetchall()]
+            
+            for col in ['source_title', 'madhab_tag', 'added_at', 'chunk_hash']:
+                if col not in columns:
+                    c.execute(f"ALTER TABLE reference_chunks ADD COLUMN {col} TEXT")
+            
+            conn.commit()
+    
+    def _seed_initial_issues(self) -> None:
+        """Seed database with initial issues if empty."""
+        with self._get_connection() as conn:
+            c = conn.cursor()
+            c.execute("SELECT COUNT(*) FROM issues")
+            if c.fetchone()[0] > 0:
+                return
+            
+            issues = self._get_seed_data()
+            for issue in issues:
+                placeholders = ','.join(['?' for _ in issue])
+                columns = ','.join(issue.keys())
+                c.execute(f"INSERT INTO issues ({columns}) VALUES ({placeholders})", list(issue.values()))
+            
+            conn.commit()
+    
+    def _get_seed_data(self) -> List[Dict]:
+        """Get seed data for initial issues."""
+        return [{
             "topic": "ibadat",
             "title_ar": "صلاة الجماعة",
             "title_en": "Congregational Prayer",
@@ -144,375 +246,528 @@ def seed_initial_issues():
             "rulings_by_madhab_fa": "{}",
             "rulings_by_madhab_ms": "{}",
             "rulings_by_madhab_ur": "{}"
-        }
-    ]
-    for issue in issues:
-        c.execute('''
-            INSERT INTO issues (
-                topic, title_ar, title_en, title_fr, title_fa, title_ms, title_ur,
-                keywords_ar, keywords_en, keywords_fr, keywords_fa, keywords_ms, keywords_ur,
-                ruling_vs_ar, ruling_s_ar, ruling_f_ar,
-                ruling_vs_en, ruling_s_en, ruling_f_en,
-                ruling_vs_fr, ruling_s_fr, ruling_f_fr,
-                ruling_vs_fa, ruling_s_fa, ruling_f_fa,
-                ruling_vs_ms, ruling_s_ms, ruling_f_ms,
-                ruling_vs_ur, ruling_s_ur, ruling_f_ur,
-                rulings_by_madhab_ar, rulings_by_madhab_en, rulings_by_madhab_fr,
-                rulings_by_madhab_fa, rulings_by_madhab_ms, rulings_by_madhab_ur
-            ) VALUES (?,?,?,?,?,?,?, ?,?,?,?,?,?, ?,?,?, ?,?,?, ?,?,?, ?,?,?, ?,?,?, ?,?,?, ?,?,?, ?,?,?)
-        ''', (
-            issue["topic"], issue["title_ar"], issue["title_en"], issue["title_fr"], issue["title_fa"], issue["title_ms"], issue["title_ur"],
-            issue["keywords_ar"], issue["keywords_en"], issue["keywords_fr"], issue["keywords_fa"], issue["keywords_ms"], issue["keywords_ur"],
-            issue["ruling_vs_ar"], issue["ruling_s_ar"], issue["ruling_f_ar"],
-            issue["ruling_vs_en"], issue["ruling_s_en"], issue["ruling_f_en"],
-            issue["ruling_vs_fr"], issue["ruling_s_fr"], issue["ruling_f_fr"],
-            issue["ruling_vs_fa"], issue["ruling_s_fa"], issue["ruling_f_fa"],
-            issue["ruling_vs_ms"], issue["ruling_s_ms"], issue["ruling_f_ms"],
-            issue["ruling_vs_ur"], issue["ruling_s_ur"], issue["ruling_f_ur"],
-            issue["rulings_by_madhab_ar"], issue["rulings_by_madhab_en"], issue["rulings_by_madhab_fr"],
-            issue["rulings_by_madhab_fa"], issue["rulings_by_madhab_ms"], issue["rulings_by_madhab_ur"]
-        ))
-    conn.commit()
-    conn.close()
+        }]
+    
+    def load_issues(self, lang: str, topic_filter: str = "all") -> List[Issue]:
+        """Load issues from database."""
+        with self._get_connection() as conn:
+            c = conn.cursor()
+            
+            query = f'''
+                SELECT id, topic, title_{lang}, keywords_{lang},
+                       ruling_vs_{lang}, ruling_s_{lang}, ruling_f_{lang},
+                       rulings_by_madhab_{lang}
+                FROM issues
+            '''
+            params = ()
+            if topic_filter != "all":
+                query += " WHERE topic = ?"
+                params = (topic_filter,)
+            
+            c.execute(query, params)
+            rows = c.fetchall()
+            
+            issues = []
+            for row in rows:
+                kw = row['keywords_{lang}'.replace('{lang}', lang)].split(',') if row[3] else []
+                issues.append(Issue(
+                    id=row[0],
+                    topic=row[1],
+                    title=row[2],
+                    keywords=[k.strip() for k in kw if k.strip()],
+                    rulings={
+                        "very_short": row[4],
+                        "short": row[5],
+                        "full": row[6]
+                    },
+                    rulings_by_madhab=json.loads(row[7]) if row[7] else {}
+                ))
+            return issues
+    
+    def import_from_csv(self, csv_content: bytes) -> int:
+        """Import issues from CSV content."""
+        with self._get_connection() as conn:
+            c = conn.cursor()
+            reader = csv.DictReader(io.StringIO(csv_content.decode('utf-8')))
+            count = 0
+            
+            for row in reader:
+                c.execute('''
+                    INSERT INTO issues (
+                        topic, title_ar, title_en, title_fr, title_fa, title_ms, title_ur,
+                        keywords_ar, keywords_en, keywords_fr, keywords_fa, keywords_ms, keywords_ur,
+                        ruling_vs_ar, ruling_s_ar, ruling_f_ar,
+                        ruling_vs_en, ruling_s_en, ruling_f_en,
+                        ruling_vs_fr, ruling_s_fr, ruling_f_fr,
+                        ruling_vs_fa, ruling_s_fa, ruling_f_fa,
+                        ruling_vs_ms, ruling_s_ms, ruling_f_ms,
+                        ruling_vs_ur, ruling_s_ur, ruling_f_ur,
+                        rulings_by_madhab_ar, rulings_by_madhab_en, rulings_by_madhab_fr,
+                        rulings_by_madhab_fa, rulings_by_madhab_ms, rulings_by_madhab_ur
+                    ) VALUES (?,?,?,?,?,?,?, ?,?,?,?,?,?, ?,?,?, ?,?,?, ?,?,?, ?,?,?, ?,?,?, ?,?,?, ?,?,?, ?,?,?)
+                ''', (
+                    row.get("topic", "other"),
+                    row.get("title_ar", ""), row.get("title_en", ""), row.get("title_fr", ""),
+                    row.get("title_fa", ""), row.get("title_ms", ""), row.get("title_ur", ""),
+                    row.get("keywords_ar", ""), row.get("keywords_en", ""), row.get("keywords_fr", ""),
+                    row.get("keywords_fa", ""), row.get("keywords_ms", ""), row.get("keywords_ur", ""),
+                    row.get("ruling_vs_ar", ""), row.get("ruling_s_ar", ""), row.get("ruling_f_ar", ""),
+                    row.get("ruling_vs_en", ""), row.get("ruling_s_en", ""), row.get("ruling_f_en", ""),
+                    row.get("ruling_vs_fr", ""), row.get("ruling_s_fr", ""), row.get("ruling_f_fr", ""),
+                    row.get("ruling_vs_fa", ""), row.get("ruling_s_fa", ""), row.get("ruling_f_fa", ""),
+                    row.get("ruling_vs_ms", ""), row.get("ruling_s_ms", ""), row.get("ruling_f_ms", ""),
+                    row.get("ruling_vs_ur", ""), row.get("ruling_s_ur", ""), row.get("ruling_f_ur", ""),
+                    row.get("rulings_by_madhab_ar", "{}"), row.get("rulings_by_madhab_en", "{}"),
+                    row.get("rulings_by_madhab_fr", "{}"), row.get("rulings_by_madhab_fa", "{}"),
+                    row.get("rulings_by_madhab_ms", "{}"), row.get("rulings_by_madhab_ur", "{}")
+                ))
+                count += 1
+            
+            conn.commit()
+            return count
+    
+    def add_reference_chunk(self, title: str, madhab_tag: str, chunk: str, embedding: List[float]) -> bool:
+        """Add a reference chunk with embedding."""
+        chunk_hash = hashlib.md5(chunk.encode()).hexdigest()
+        now = datetime.datetime.utcnow().isoformat()
+        
+        with self._get_connection() as conn:
+            c = conn.cursor()
+            try:
+                c.execute(
+                    """INSERT INTO reference_chunks 
+                       (source_title, madhab_tag, chunk_text, embedding, added_at, chunk_hash) 
+                       VALUES (?,?,?,?,?,?)""",
+                    (title, madhab_tag or "", chunk, json.dumps(embedding), now, chunk_hash)
+                )
+                conn.commit()
+                return True
+            except sqlite3.IntegrityError:
+                # Duplicate chunk, skip
+                return False
+    
+    def get_reference_chunks(self) -> List[Dict]:
+        """Get all reference chunks with embeddings."""
+        with self._get_connection() as conn:
+            c = conn.cursor()
+            c.execute("SELECT id, source_title, madhab_tag, chunk_text, embedding FROM reference_chunks")
+            rows = c.fetchall()
+            return [dict(row) for row in rows]
+    
+    def count_reference_chunks(self) -> int:
+        """Count total reference chunks."""
+        with self._get_connection() as conn:
+            c = conn.cursor()
+            c.execute("SELECT COUNT(*) FROM reference_chunks")
+            return c.fetchone()[0]
+    
+    def list_reference_sources(self) -> List[Tuple[str, int]]:
+        """List all reference sources with chunk counts."""
+        with self._get_connection() as conn:
+            c = conn.cursor()
+            c.execute("SELECT source_title, COUNT(*) FROM reference_chunks GROUP BY source_title")
+            return c.fetchall()
 
-def load_issues(lang, topic_filter="all"):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    lang_suffix = lang
-    query = f'''
-        SELECT id, topic, title_{lang_suffix}, keywords_{lang_suffix},
-               ruling_vs_{lang_suffix}, ruling_s_{lang_suffix}, ruling_f_{lang_suffix},
-               rulings_by_madhab_{lang_suffix}
-        FROM issues
-    '''
-    params = ()
-    if topic_filter != "all":
-        query += " WHERE topic = ?"
-        params = (topic_filter,)
-    c.execute(query, params)
-    rows = c.fetchall()
-    conn.close()
-    issues = []
-    for row in rows:
-        kw = row[3].split(',') if row[3] else []
-        issues.append({
-            "id": row[0],
-            "topic": row[1],
-            "title": row[2],
-            "keywords": [k.strip() for k in kw if k.strip()],
-            "rulings": {
-                "very_short": row[4],
-                "short": row[5],
-                "full": row[6]
-            },
-            "rulings_by_madhab": json.loads(row[7]) if row[7] else {}
-        })
-    return issues
+# ============================================
+# AI Service Layer
+# ============================================
 
-def import_from_csv(csv_content):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    reader = csv.DictReader(io.StringIO(csv_content.decode('utf-8')))
-    count = 0
-    for row in reader:
-        c.execute('''
-            INSERT INTO issues (
-                topic, title_ar, title_en, title_fr, title_fa, title_ms, title_ur,
-                keywords_ar, keywords_en, keywords_fr, keywords_fa, keywords_ms, keywords_ur,
-                ruling_vs_ar, ruling_s_ar, ruling_f_ar,
-                ruling_vs_en, ruling_s_en, ruling_f_en,
-                ruling_vs_fr, ruling_s_fr, ruling_f_fr,
-                ruling_vs_fa, ruling_s_fa, ruling_f_fa,
-                ruling_vs_ms, ruling_s_ms, ruling_f_ms,
-                ruling_vs_ur, ruling_s_ur, ruling_f_ur,
-                rulings_by_madhab_ar, rulings_by_madhab_en, rulings_by_madhab_fr,
-                rulings_by_madhab_fa, rulings_by_madhab_ms, rulings_by_madhab_ur
-            ) VALUES (?,?,?,?,?,?,?, ?,?,?,?,?,?, ?,?,?, ?,?,?, ?,?,?, ?,?,?, ?,?,?, ?,?,?, ?,?,?, ?,?,?)
-        ''', (
-            row.get("topic", "other"),
-            row.get("title_ar", ""), row.get("title_en", ""), row.get("title_fr", ""), row.get("title_fa", ""), row.get("title_ms", ""), row.get("title_ur", ""),
-            row.get("keywords_ar", ""), row.get("keywords_en", ""), row.get("keywords_fr", ""), row.get("keywords_fa", ""), row.get("keywords_ms", ""), row.get("keywords_ur", ""),
-            row.get("ruling_vs_ar", ""), row.get("ruling_s_ar", ""), row.get("ruling_f_ar", ""),
-            row.get("ruling_vs_en", ""), row.get("ruling_s_en", ""), row.get("ruling_f_en", ""),
-            row.get("ruling_vs_fr", ""), row.get("ruling_s_fr", ""), row.get("ruling_f_fr", ""),
-            row.get("ruling_vs_fa", ""), row.get("ruling_s_fa", ""), row.get("ruling_f_fa", ""),
-            row.get("ruling_vs_ms", ""), row.get("ruling_s_ms", ""), row.get("ruling_f_ms", ""),
-            row.get("ruling_vs_ur", ""), row.get("ruling_s_ur", ""), row.get("ruling_f_ur", ""),
-            row.get("rulings_by_madhab_ar", "{}"), row.get("rulings_by_madhab_en", "{}"), row.get("rulings_by_madhab_fr", "{}"),
-            row.get("rulings_by_madhab_fa", "{}"), row.get("rulings_by_madhab_ms", "{}"), row.get("rulings_by_madhab_ur", "{}")
-        ))
-        count += 1
-    conn.commit()
-    conn.close()
-    return count
-
-EMBED_MODEL = "models/text-embedding-004"
-
-def chunk_text(text, max_chars=700, overlap=100):
-    text = re.sub(r'\s+', ' ', text).strip()
-    if not text:
-        return []
-    chunks = []
-    start = 0
-    while start < len(text):
-        end = start + max_chars
-        chunks.append(text[start:end].strip())
-        start = end - overlap
-    return [c for c in chunks if len(c) > 30]
-
-def embed_texts(texts, task_type="retrieval_document"):
-    if not USE_GEMINI or not texts:
-        return None
-    try:
-        vectors = []
-        for t in texts:
-            result = genai.embed_content(model=EMBED_MODEL, content=t, task_type=task_type)
-            vectors.append(result["embedding"])
-        return vectors
-    except Exception:
-        return None
-
-def add_reference_document(title, madhab_tag, raw_text):
-    chunks = chunk_text(raw_text)
-    if not chunks:
-        return 0
-    vectors = embed_texts(chunks, task_type="retrieval_document")
-    if vectors is None:
-        return -1
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    now = datetime.datetime.utcnow().isoformat()
-    for chunk, vec in zip(chunks, vectors):
-        c.execute(
-            "INSERT INTO reference_chunks (source_title, madhab_tag, chunk_text, embedding, added_at) VALUES (?,?,?,?,?)",
-            (title, madhab_tag or "", chunk, json.dumps(vec), now),
-        )
-    conn.commit()
-    conn.close()
-    return len(chunks)
-
-def count_reference_chunks():
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("SELECT COUNT(*) FROM reference_chunks")
-    n = c.fetchone()[0]
-    conn.close()
-    return n
-
-def list_reference_sources():
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("SELECT source_title, COUNT(*) FROM reference_chunks GROUP BY source_title")
-    rows = c.fetchall()
-    conn.close()
-    return rows
-
-def retrieve_relevant_chunks(query, top_k=5, min_similarity=0.55):
-    total = count_reference_chunks()
-    if total == 0:
-        return []
-    q_vec = embed_texts([query], task_type="retrieval_query")
-    if not q_vec:
-        return []
-    q_vec = np.array(q_vec[0])
-
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    c.execute("SELECT id, source_title, madhab_tag, chunk_text, embedding FROM reference_chunks")
-    rows = c.fetchall()
-    conn.close()
-
-    scored = []
-    for row_id, title, tag, chunk, emb_json in rows:
-        vec = np.array(json.loads(emb_json))
-        denom = (np.linalg.norm(q_vec) * np.linalg.norm(vec))
-        sim = float(np.dot(q_vec, vec) / denom) if denom else 0.0
-        if sim >= min_similarity:
-            scored.append({"title": title, "tag": tag, "chunk": chunk, "score": sim})
-
-    scored.sort(key=lambda x: x["score"], reverse=True)
-    return scored[:top_k]
-
-def rag_generate_answer(question, lang, madhab_codes, level, T):
-    if not USE_GEMINI:
-        return None
-    chunks = retrieve_relevant_chunks(question, top_k=6)
-    if not chunks:
-        return None
-
-    context_block = "\n\n".join(f"[{i+1}] (المصدر: {c['title']}) {c['chunk']}" for i, c in enumerate(chunks))
-    madhab_list_str = ", ".join(f"{code} ({MADHHAB_NAMES[code][lang]})" for code in madhab_codes)
-    level_hint = {
-        "very_short": "كلمة أو كلمتين فقط",
-        "short": "سطر واحد مختصر",
-        "full": "فقرة قصيرة من سطرين إلى أربعة أسطر",
-    }.get(level, "سطر واحد مختصر")
-
-    prompt = f"""
-أنت مساعد بحثي. لديك مقاطع مسترجعة من مراجع فقهية فعلية رفعها المشرف (مذكورة أدناه مع أرقامها ومصادرها). اعتمد حصرياً على هذه المقاطع في إجابتك، ولا تضف معلومات من خارجها.
-
-المقاطع المرجعية:
-{context_block}
-
-سؤال المستخدم: "{question}"
-
-المطلوب: لكل مذهب من المذاهب التالية: {madhab_list_str}
-- إن كانت المقاطع أعلاه تتضمن ما يخص هذا المذهب في هذه المسألة، لخّص رأيه المستفاد منها حصراً، بمستوى تفصيل: {level_hint}، مع الإشارة لرقم المقطع المصدر مثل [1].
-- إن كانت المقاطع لا تتضمن شيئاً عن هذا المذهب في هذه المسألة تحديداً، اكتب حرفياً: "لا يوجد في المراجع المرفوعة ما يخص هذا المذهب في هذه المسألة."
-
-اكتب النص بلغة رمزها ISO: "{lang}"
-
-أخرج النتيجة بصيغة JSON فقط بلا أي شرح إضافي، بهذا الشكل بالضبط: {{"maliki": "نص الإجابة مع [رقم المصدر]", "shafii": "..."}}
-"""
-    try:
-        response = model.generate_content(prompt)
-        raw = response.text.strip()
-        json_start = raw.find("{")
-        json_end = raw.rfind("}") + 1
-        data = json.loads(raw[json_start:json_end])
-        cards = []
-        sources_used = sorted({c["title"] for c in chunks})
-        for code in madhab_codes:
-            answer = data.get(code)
-            if answer and "لا يوجد في المراجع" not in answer:
-                cards.append({
-                    "label": MADHHAB_NAMES[code][lang],
-                    "answer": answer,
-                    "note": T["rag_badge"].format(", ".join(sources_used)),
-                })
-        return cards if cards else None
-    except Exception:
-        return None
-
-def semantic_search(query, issues, lang):
-    if not USE_GEMINI or not issues:
-        return None
-    titles_with_ids = [f"{issue['id']}: {issue['title']}" for issue in issues]
-    prompt = f"""
-    أنت مساعد فقهي. لديك قائمة بعناوين مسائل فقهية. سؤال المستخدم: "{query}".
-
-    قائمة العناوين (مع أرقامها):
-    {chr(10).join(titles_with_ids)}
-
-    المطلوب: حدد ما يصل إلى 3 عناوين من القائمة هي الأقرب لسؤال المستخدم.
-    أخرج النتيجة على شكل قائمة بأرقام المسائل مفصولة بفواصل (مثال: 3, 7, 12).
-    إذا لم تجد أي تطابق، اكتب "لا يوجد".
-    """
-    try:
-        response = model.generate_content(prompt)
-        result = response.text.strip()
+class AIService:
+    """Handles all AI operations including embedding and generation."""
+    
+    def __init__(self):
+        self.available = USE_GEMINI
+        if not self.available:
+            logger.warning("AI service not available")
+    
+    def embed_text(self, text: str, task_type: str = "retrieval_document") -> Optional[List[float]]:
+        """Generate embedding for a single text."""
+        if not self.available or not text:
+            return None
+        
+        try:
+            result = genai.embed_content(model=EMBED_MODEL, content=text, task_type=task_type)
+            return result["embedding"]
+        except Exception as e:
+            logger.error(f"Embedding failed: {e}")
+            return None
+    
+    def embed_texts(self, texts: List[str], task_type: str = "retrieval_document") -> Optional[List[List[float]]]:
+        """Generate embeddings for multiple texts."""
+        if not self.available or not texts:
+            return None
+        
+        try:
+            vectors = []
+            for t in texts:
+                result = genai.embed_content(model=EMBED_MODEL, content=t, task_type=task_type)
+                vectors.append(result["embedding"])
+            return vectors
+        except Exception as e:
+            logger.error(f"Batch embedding failed: {e}")
+            return None
+    
+    def generate(self, prompt: str) -> Optional[str]:
+        """Generate content using AI model."""
+        if not self.available:
+            return None
+        
+        try:
+            response = model.generate_content(prompt)
+            return response.text
+        except Exception as e:
+            logger.error(f"Generation failed: {e}")
+            return None
+    
+    def semantic_search(self, query: str, issues: List[Issue], lang: str) -> Optional[List[int]]:
+        """Find semantically relevant issues."""
+        if not self.available or not issues:
+            return None
+        
+        titles_with_ids = [f"{issue.id}: {issue.title}" for issue in issues]
+        prompt = f"""
+        أنت مساعد فقهي. لديك قائمة بعناوين مسائل فقهية. سؤال المستخدم: "{query}".
+        
+        قائمة العناوين (مع أرقامها):
+        {chr(10).join(titles_with_ids)}
+        
+        المطلوب: حدد ما يصل إلى 3 عناوين من القائمة هي الأقرب لسؤال المستخدم.
+        أخرج النتيجة على شكل قائمة بأرقام المسائل مفصولة بفواصل (مثال: 3, 7, 12).
+        إذا لم تجد أي تطابق، اكتب "لا يوجد".
+        """
+        
+        response = self.generate(prompt)
+        if not response:
+            return None
+        
+        result = response.strip()
         if result == "لا يوجد":
             return []
+        
         ids = re.findall(r'\d+', result)
         return [int(id) for id in ids[:3]]
-    except Exception:
-        return None
-
-def ai_generate_answer(question, lang, madhab_codes, level, T):
-    if not USE_GEMINI or not madhab_codes:
-        return None
-
-    madhab_list_str = ", ".join(f"{code} ({MADHHAB_NAMES[code][lang]})" for code in madhab_codes)
-    level_hint = {
-        "very_short": "كلمة أو كلمتين فقط",
-        "short": "سطر واحد مختصر",
-        "full": "فقرة قصيرة من سطرين إلى أربعة أسطر",
-    }.get(level, "سطر واحد مختصر")
-
-    prompt = f"""
-أنت مساعد بحثي متخصص في عرض آراء المذاهب الفقهية الإسلامية المعروفة والموثقة تاريخياً في كتب كل مذهب المعتمدة. أنت لا تُصدر فتوى شخصية، ولا تخترع رأياً غير موثق لمذهب معين.
-
-سؤال المستخدم: "{question}"
-
-المطلوب: لكل مذهب من المذاهب التالية، اذكر رأيه الفقهي المعروف (إن وُجد رأي موثق) في هذه المسألة تحديداً:
-{madhab_list_str}
-
-مستوى التفصيل المطلوب لكل إجابة: {level_hint}
-اكتب نص كل إجابة بلغة رمزها ISO: "{lang}"
-
-قاعدة صارمة: إن لم يكن هناك رأي معروف وموثق لمذهب معين في هذه المسألة تحديداً، اكتب صراحة أنه لا يوجد رأي موثق متاح.
-
-أخرج النتيجة بصيغة JSON فقط، بهذا الشكل: {{"maliki": "نص الإجابة", "shafii": "نص الإجابة"}}
-"""
-    try:
-        response = model.generate_content(prompt)
-        raw = response.text.strip()
-        json_start = raw.find("{")
-        json_end = raw.rfind("}") + 1
-        data = json.loads(raw[json_start:json_end])
-        cards = []
-        for code in madhab_codes:
-            answer = data.get(code)
-            if answer:
-                cards.append({
-                    "label": MADHHAB_NAMES[code][lang],
-                    "answer": answer,
-                    "note": T["ai_badge"],
-                })
-        return cards if cards else None
-    except Exception:
-        return None
-
-def search_issues(query, topic_filter, madhabs, level, lang, T, MADHHAB_NAMES, TOPICS):
-    if not query:
-        return []
-    all_issues = load_issues(lang, topic_filter)
-    if not all_issues:
-        return []
-    q = query.strip().lower()
-
-    semantic_ids = None
-    if USE_GEMINI:
-        semantic_ids = semantic_search(q, all_issues, lang)
-
-    results = []
-    if semantic_ids is not None:
-        for id in semantic_ids:
-            issue = next((i for i in all_issues if i["id"] == id), None)
-            if issue and issue not in results:
-                results.append(issue)
-
-    if not results:
-        for issue in all_issues:
-            pool = (issue["title"].lower() + " " +
-                    " ".join(issue["keywords"]).lower() + " " +
-                    issue["rulings"]["full"].lower())
-            if q in pool:
-                results.append(issue)
-        if not results:
-            words = re.findall(r"\w+", q)
-            for issue in all_issues:
-                pool = issue["title"].lower() + " " + " ".join(issue["keywords"]).lower()
-                if any(w in pool for w in words):
-                    results.append(issue)
-
-    final_results = []
-    for issue in results:
-        cards = []
-        per_madhab = issue.get("rulings_by_madhab", {})
-        if per_madhab:
-            for m in madhabs:
-                data = per_madhab.get(m)
-                if data:
+    
+    def rag_generate_answer(self, question: str, lang: str, madhab_codes: List[str], 
+                           level: str, T: Dict, chunks: List[Dict]) -> Optional[List[Dict]]:
+        """Generate answer based on RAG chunks."""
+        if not self.available or not chunks:
+            return None
+        
+        context_block = "\n\n".join(
+            f"[{i+1}] (المصدر: {c['title']}) {c['chunk']}" 
+            for i, c in enumerate(chunks)
+        )
+        madhab_list_str = ", ".join(f"{code} ({MADHHAB_NAMES[code][lang]})" for code in madhab_codes)
+        level_hint = {
+            "very_short": "كلمة أو كلمتين فقط",
+            "short": "سطر واحد مختصر",
+            "full": "فقرة قصيرة من سطرين إلى أربعة أسطر",
+        }.get(level, "سطر واحد مختصر")
+        
+        prompt = f"""
+        أنت مساعد بحثي. لديك مقاطع مسترجعة من مراجع فقهية فعلية رفعها المشرف (مذكورة أدناه مع أرقامها ومصادرها). اعتمد حصرياً على هذه المقاطع في إجابتك، ولا تضف معلومات من خارجها.
+        
+        المقاطع المرجعية:
+        {context_block}
+        
+        سؤال المستخدم: "{question}"
+        
+        المطلوب: لكل مذهب من المذاهب التالية: {madhab_list_str}
+        - إن كانت المقاطع أعلاه تتضمن ما يخص هذا المذهب في هذه المسألة، لخّص رأيه المستفاد منها حصراً، بمستوى تفصيل: {level_hint}، مع الإشارة لرقم المقطع المصدر مثل [1].
+        - إن كانت المقاطع لا تتضمن شيئاً عن هذا المذهب في هذه المسألة تحديداً، اكتب حرفياً: "لا يوجد في المراجع المرفوعة ما يخص هذا المذهب في هذه المسألة."
+        
+        اكتب النص بلغة رمزها ISO: "{lang}"
+        
+        أخرج النتيجة بصيغة JSON فقط بلا أي شرح إضافي، بهذا الشكل بالضبط: {{"maliki": "نص الإجابة مع [رقم المصدر]", "shafii": "..."}}
+        """
+        
+        response = self.generate(prompt)
+        if not response:
+            return None
+        
+        try:
+            raw = response.strip()
+            json_start = raw.find("{")
+            json_end = raw.rfind("}") + 1
+            data = json.loads(raw[json_start:json_end])
+            
+            cards = []
+            sources_used = sorted({c["title"] for c in chunks})
+            for code in madhab_codes:
+                answer = data.get(code)
+                if answer and "لا يوجد في المراجع" not in answer:
                     cards.append({
-                        "label": MADHHAB_NAMES[m][lang],
-                        "answer": data.get(level, data.get("full", "")),
-                        "note": T["note_madhab"].format(MADHHAB_NAMES[m][lang]),
+                        "label": MADHHAB_NAMES[code][lang],
+                        "answer": answer,
+                        "note": T["rag_badge"].format(", ".join(sources_used)),
                     })
-        if not cards:
-            cards.append({
-                "label": TOPICS[issue["topic"]][lang],
-                "answer": issue["rulings"].get(level, issue["rulings"]["full"]),
-                "note": T["note_general"],
-            })
-        final_results.append({
-            "title": issue["title"],
-            "topic": TOPICS[issue["topic"]][lang],
-            "cards": cards,
-        })
-    return final_results
+            return cards if cards else None
+        except Exception as e:
+            logger.error(f"RAG answer parsing failed: {e}")
+            return None
+    
+    def ai_generate_answer(self, question: str, lang: str, madhab_codes: List[str], 
+                          level: str, T: Dict) -> Optional[List[Dict]]:
+        """Generate AI answer from general knowledge."""
+        if not self.available or not madhab_codes:
+            return None
+        
+        madhab_list_str = ", ".join(f"{code} ({MADHHAB_NAMES[code][lang]})" for code in madhab_codes)
+        level_hint = {
+            "very_short": "كلمة أو كلمتين فقط",
+            "short": "سطر واحد مختصر",
+            "full": "فقرة قصيرة من سطرين إلى أربعة أسطر",
+        }.get(level, "سطر واحد مختصر")
+        
+        prompt = f"""
+        أنت مساعد بحثي متخصص في عرض آراء المذاهب الفقهية الإسلامية المعروفة والموثقة تاريخياً في كتب كل مذهب المعتمدة. أنت لا تُصدر فتوى شخصية، ولا تخترع رأياً غير موثق لمذهب معين.
+        
+        سؤال المستخدم: "{question}"
+        
+        المطلوب: لكل مذهب من المذاهب التالية، اذكر رأيه الفقهي المعروف (إن وُجد رأي موثق) في هذه المسألة تحديداً:
+        {madhab_list_str}
+        
+        مستوى التفصيل المطلوب لكل إجابة: {level_hint}
+        اكتب نص كل إجابة بلغة رمزها ISO: "{lang}"
+        
+        قاعدة صارمة: إن لم يكن هناك رأي معروف وموثق لمذهب معين في هذه المسألة تحديداً، اكتب صراحة أنه لا يوجد رأي موثق متاح.
+        
+        أخرج النتيجة بصيغة JSON فقط، بهذا الشكل: {{"maliki": "نص الإجابة", "shafii": "نص الإجابة"}}
+        """
+        
+        response = self.generate(prompt)
+        if not response:
+            return None
+        
+        try:
+            raw = response.strip()
+            json_start = raw.find("{")
+            json_end = raw.rfind("}") + 1
+            data = json.loads(raw[json_start:json_end])
+            
+            cards = []
+            for code in madhab_codes:
+                answer = data.get(code)
+                if answer:
+                    cards.append({
+                        "label": MADHHAB_NAMES[code][lang],
+                        "answer": answer,
+                        "note": T["ai_badge"],
+                    })
+            return cards if cards else None
+        except Exception as e:
+            logger.error(f"AI answer parsing failed: {e}")
+            return None
 
-LANGS = {"العربية": "ar", "English": "en", "Français": "fr", "فارسی": "fa", "Bahasa Melayu": "ms", "اردو": "ur"}
+# ============================================
+# Search Service
+# ============================================
+
+class SearchService:
+    """Handles search operations with caching."""
+    
+    def __init__(self, db: DatabaseManager, ai: AIService):
+        self.db = db
+        self.ai = ai
+        self._cache = {}
+    
+    def search(self, query: str, topic_filter: str, madhabs: List[str], 
+               level: str, lang: str, T: Dict) -> List[SearchResult]:
+        """Search for issues matching the query."""
+        if not query:
+            return []
+        
+        cache_key = f"{query}|{topic_filter}|{','.join(madhabs)}|{level}|{lang}"
+        if cache_key in self._cache:
+            return self._cache[cache_key]
+        
+        all_issues = self.db.load_issues(lang, topic_filter)
+        if not all_issues:
+            return []
+        
+        q = query.strip().lower()
+        
+        # Try semantic search first
+        semantic_ids = self.ai.semantic_search(q, all_issues, lang) if self.ai.available else None
+        
+        results = []
+        if semantic_ids is not None:
+            for id in semantic_ids:
+                issue = next((i for i in all_issues if i.id == id), None)
+                if issue and issue not in results:
+                    results.append(issue)
+        
+        # Fallback to keyword search
+        if not results:
+            for issue in all_issues:
+                pool = (issue.title.lower() + " " +
+                       " ".join(issue.keywords).lower() + " " +
+                       issue.rulings["full"].lower())
+                if q in pool:
+                    results.append(issue)
+            
+            if not results:
+                words = re.findall(r"\w+", q)
+                for issue in all_issues:
+                    pool = issue.title.lower() + " " + " ".join(issue.keywords).lower()
+                    if any(w in pool for w in words):
+                        results.append(issue)
+        
+        # Build search results
+        final_results = []
+        for issue in results:
+            cards = []
+            per_madhab = issue.rulings_by_madhab
+            if per_madhab:
+                for m in madhabs:
+                    data = per_madhab.get(m)
+                    if data:
+                        cards.append({
+                            "label": MADHHAB_NAMES[m][lang],
+                            "answer": data.get(level, data.get("full", "")),
+                            "note": T["note_madhab"].format(MADHHAB_NAMES[m][lang]),
+                        })
+            
+            if not cards:
+                cards.append({
+                    "label": TOPICS[issue.topic][lang],
+                    "answer": issue.rulings.get(level, issue.rulings.get("full", "")),
+                    "note": T["note_general"],
+                })
+            
+            final_results.append(SearchResult(
+                title=issue.title,
+                topic=TOPICS[issue.topic][lang],
+                cards=cards
+            ))
+        
+        self._cache[cache_key] = final_results
+        return final_results
+
+# ============================================
+# Reference Management
+# ============================================
+
+class ReferenceManager:
+    """Manages reference documents for RAG."""
+    
+    def __init__(self, db: DatabaseManager, ai: AIService):
+        self.db = db
+        self.ai = ai
+    
+    def chunk_text(self, text: str, max_chars: int = 700, overlap: int = 100) -> List[str]:
+        """Split text into overlapping chunks."""
+        text = re.sub(r'\s+', ' ', text).strip()
+        if not text:
+            return []
+        
+        chunks = []
+        start = 0
+        while start < len(text):
+            end = start + max_chars
+            chunks.append(text[start:end].strip())
+            start = end - overlap
+        
+        return [c for c in chunks if len(c) > 30]
+    
+    def add_document(self, title: str, madhab_tag: str, raw_text: str) -> int:
+        """Add a document to reference index."""
+        chunks = self.chunk_text(raw_text)
+        if not chunks:
+            return 0
+        
+        embeddings = self.ai.embed_texts(chunks, task_type="retrieval_document")
+        if embeddings is None:
+            return -1
+        
+        added = 0
+        for chunk, embedding in zip(chunks, embeddings):
+            if self.db.add_reference_chunk(title, madhab_tag, chunk, embedding):
+                added += 1
+        
+        return added
+    
+    def retrieve_relevant_chunks(self, query: str, top_k: int = 5, 
+                                 min_similarity: float = 0.55) -> List[Dict]:
+        """Retrieve relevant chunks for a query."""
+        total = self.db.count_reference_chunks()
+        if total == 0:
+            return []
+        
+        q_embedding = self.ai.embed_text(query, task_type="retrieval_query")
+        if not q_embedding:
+            return []
+        
+        q_vec = np.array(q_embedding)
+        chunks = self.db.get_reference_chunks()
+        
+        scored = []
+        for chunk in chunks:
+            vec = np.array(json.loads(chunk["embedding"]))
+            denom = (np.linalg.norm(q_vec) * np.linalg.norm(vec))
+            sim = float(np.dot(q_vec, vec) / denom) if denom else 0.0
+            
+            if sim >= min_similarity:
+                scored.append({
+                    "title": chunk["source_title"],
+                    "tag": chunk["madhab_tag"],
+                    "chunk": chunk["chunk_text"],
+                    "score": sim
+                })
+        
+        scored.sort(key=lambda x: x["score"], reverse=True)
+        return scored[:top_k]
+
+# ============================================
+# Constants & Data
+# ============================================
+
+LANGS = {"العربية": "ar", "English": "en", "Français": "fr", 
+         "فارسی": "fa", "Bahasa Melayu": "ms", "اردو": "ur"}
+
+MADHHAB_NAMES = {
+    "maliki": {"ar": "مالكي", "en": "Maliki", "fr": "Malikite", "fa": "مالکی", "ms": "Maliki", "ur": "مالکی"},
+    "shafii": {"ar": "شافعي", "en": "Shafi'i", "fr": "Chaféite", "fa": "شافعی", "ms": "Syafie", "ur": "شافعی"},
+    "hanafi": {"ar": "حنفي", "en": "Hanafi", "fr": "Hanafite", "fa": "حنفی", "ms": "Hanafi", "ur": "حنفی"},
+    "hanbali": {"ar": "حنبلي", "en": "Hanbali", "fr": "Hanbalite", "fa": "حنبلی", "ms": "Hanbali", "ur": "حنبلی"},
+    "zahiri": {"ar": "ظاهري", "en": "Zahiri", "fr": "Zahirite", "fa": "ظاهری", "ms": "Zahiri", "ur": "ظاہری"},
+    "jafari": {"ar": "جعفري", "en": "Ja'fari", "fr": "Jaafarite", "fa": "جعفری", "ms": "Jaafari", "ur": "جعفری"},
+    "zaidi": {"ar": "زيدي", "en": "Zaidi", "fr": "Zaydite", "fa": "زیدی", "ms": "Zaidi", "ur": "زیدی"},
+    "ibadi": {"ar": "إباضي", "en": "Ibadi", "fr": "Ibadite", "fa": "اباضی", "ms": "Ibadi", "ur": "اباضی"},
+}
+
+GROUPS = {
+    "sunni": {"ar": "مذاهب السنة", "en": "Sunni Schools", "fr": "Écoles sunnites", "fa": "مذاهب اهل سنت", 
+              "ms": "Mazhab Sunni", "ur": "اہل سنت کے مذاہب", "members": ["maliki", "shafii", "hanafi", "hanbali", "zahiri"]},
+    "shia": {"ar": "مذاهب الشيعة", "en": "Shia Schools", "fr": "Écoles chiites", "fa": "مذاهب شیعه", 
+             "ms": "Mazhab Syiah", "ur": "شیعہ مذاہب", "members": ["jafari", "zaidi"]},
+    "ibadi": {"ar": "المذهب الإباضي", "en": "Ibadi School", "fr": "École ibadite", "fa": "مذهب اباضی", 
+              "ms": "Mazhab Ibadi", "ur": "اباضی مذہب", "members": ["ibadi"]},
+}
+
+TOPICS = {
+    "ibadat": {"ar": "العبادات", "en": "Acts of Worship", "fr": "Actes d'adoration", 
+               "fa": "عبادات", "ms": "Ibadat", "ur": "عبادات"},
+    "muamalat": {"ar": "المعاملات", "en": "Transactions", "fr": "Transactions", 
+                 "fa": "معاملات", "ms": "Muamalat", "ur": "معاملات"},
+    "family": {"ar": "الأسرة", "en": "Family", "fr": "Famille", 
+               "fa": "خانواده", "ms": "Keluarga", "ur": "خاندان"},
+    "other": {"ar": "مواضيع أخرى", "en": "Other Topics", "fr": "Autres sujets", 
+              "fa": "موضوعات دیگر", "ms": "Topik Lain", "ur": "دیگر موضوعات"},
+}
+
+LEVELS = {
+    "very_short": {"ar": "مختصرة (كلمة)", "en": "Very short (one word)", "fr": "Très bref (un mot)", 
+                   "fa": "بسیار مختصر (یک واژه)", "ms": "Sangat ringkas (satu perkataan)", "ur": "بہت مختصر (ایک لفظ)"},
+    "short": {"ar": "مبسطة (سطر)", "en": "Short (one line)", "fr": "Bref (une ligne)", 
+              "fa": "ساده (یک خط)", "ms": "Ringkas (satu baris)", "ur": "آسان (ایک سطر)"},
+    "full": {"ar": "مفصل (أكثر من سطر)", "en": "Detailed (full)", "fr": "Détaillé (complet)", 
+             "fa": "مفصل (چند خط)", "ms": "Terperinci (penuh)", "ur": "تفصیلی (مکمل)"},
+}
+
+# ============================================
+# UI Translations
+# ============================================
 
 UI = {
     "ar": {
@@ -601,7 +856,7 @@ UI = {
         "ai_disclaimer": "⚠️ This answer was generated automatically by AI because this issue isn't in the verified database yet.",
         "ai_generating": "🤖 Generating an AI answer...",
         "ai_unavailable": "Automatic AI answering is currently disabled.",
-        "rag_badge": "📖 Based on uploaded references.",
+        "rag_badge": "📖 Based on uploaded references ({})",
         "rag_expander": "📁 Manage References (RAG) — Admins",
         "rag_intro": "Upload fiqh reference texts you have rights to use; the system will chunk them and search semantically.",
         "rag_title_label": "Source title",
@@ -871,51 +1126,26 @@ UI = {
     },
 }
 
-MADHHAB_NAMES = {
-    "maliki": {"ar": "مالكي", "en": "Maliki", "fr": "Malikite", "fa": "مالکی", "ms": "Maliki", "ur": "مالکی"},
-    "shafii": {"ar": "شافعي", "en": "Shafi'i", "fr": "Chaféite", "fa": "شافعی", "ms": "Syafie", "ur": "شافعی"},
-    "hanafi": {"ar": "حنفي", "en": "Hanafi", "fr": "Hanafite", "fa": "حنفی", "ms": "Hanafi", "ur": "حنفی"},
-    "hanbali": {"ar": "حنبلي", "en": "Hanbali", "fr": "Hanbalite", "fa": "حنبلی", "ms": "Hanbali", "ur": "حنبلی"},
-    "zahiri": {"ar": "ظاهري", "en": "Zahiri", "fr": "Zahirite", "fa": "ظاهری", "ms": "Zahiri", "ur": "ظاہری"},
-    "jafari": {"ar": "جعفري", "en": "Ja'fari", "fr": "Jaafarite", "fa": "جعفری", "ms": "Jaafari", "ur": "جعفری"},
-    "zaidi": {"ar": "زيدي", "en": "Zaidi", "fr": "Zaydite", "fa": "زیدی", "ms": "Zaidi", "ur": "زیدی"},
-    "ibadi": {"ar": "إباضي", "en": "Ibadi", "fr": "Ibadite", "fa": "اباضی", "ms": "Ibadi", "ur": "اباضی"},
-}
-
-GROUPS = {
-    "sunni": {"ar": "مذاهب السنة", "en": "Sunni Schools", "fr": "Écoles sunnites", "fa": "مذاهب اهل سنت", "ms": "Mazhab Sunni", "ur": "اہل سنت کے مذاہب",
-              "members": ["maliki", "shafii", "hanafi", "hanbali", "zahiri"]},
-    "shia": {"ar": "مذاهب الشيعة", "en": "Shia Schools", "fr": "Écoles chiites", "fa": "مذاهب شیعه", "ms": "Mazhab Syiah", "ur": "شیعہ مذاہب",
-             "members": ["jafari", "zaidi"]},
-    "ibadi": {"ar": "المذهب الإباضي", "en": "Ibadi School", "fr": "École ibadite", "fa": "مذهب اباضی", "ms": "Mazhab Ibadi", "ur": "اباضی مذہب",
-              "members": ["ibadi"]},
-}
-
-TOPICS = {
-    "ibadat": {"ar": "العبادات", "en": "Acts of Worship", "fr": "Actes d'adoration", "fa": "عبادات", "ms": "Ibadat", "ur": "عبادات"},
-    "muamalat": {"ar": "المعاملات", "en": "Transactions", "fr": "Transactions", "fa": "معاملات", "ms": "Muamalat", "ur": "معاملات"},
-    "family": {"ar": "الأسرة", "en": "Family", "fr": "Famille", "fa": "خانواده", "ms": "Keluarga", "ur": "خاندان"},
-    "other": {"ar": "مواضيع أخرى", "en": "Other Topics", "fr": "Autres sujets", "fa": "موضوعات دیگر", "ms": "Topik Lain", "ur": "دیگر موضوعات"},
-}
-
-LEVELS = {
-    "very_short": {"ar": "مختصرة (كلمة)", "en": "Very short (one word)", "fr": "Très bref (un mot)", "fa": "بسیار مختصر (یک واژه)", "ms": "Sangat ringkas (satu perkataan)", "ur": "بہت مختصر (ایک لفظ)"},
-    "short": {"ar": "مبسطة (سطر)", "en": "Short (one line)", "fr": "Bref (une ligne)", "fa": "ساده (یک خط)", "ms": "Ringkas (satu baris)", "ur": "آسان (ایک سطر)"},
-    "full": {"ar": "مفصل (أكثر من سطر)", "en": "Detailed (full)", "fr": "Détaillé (complet)", "fa": "مفصل (چند خط)", "ms": "Terperinci (penuh)", "ur": "تفصیلی (مکمل)"},
-}
+# ============================================
+# Additional Data
+# ============================================
 
 GLOSSARY = [
-    {"term": {"ar": "الفرض / فرض العين", "en": "Fard / Fard Ayn (Individual Obligation)", "fr": "Le fard / fard ayn (Obligation individuelle)", "fa": "فرض / فرض عین", "ms": "Fardu / Fardu Ain (Kewajipan Individu)", "ur": "فرض / فرض عین"},
+    {"term": {"ar": "الفرض / فرض العين", "en": "Fard / Fard Ayn (Individual Obligation)", 
+              "fr": "Le fard / fard ayn (Obligation individuelle)", "fa": "فرض / فرض عین", 
+              "ms": "Fardu / Fardu Ain (Kewajipan Individu)", "ur": "فرض / فرض عین"},
      "definition": {"ar": "ما طلب الشارع فعله طلباً جازماً من كل مكلف بعينه، يُثاب فاعله ويُعاقب تاركه.",
                     "en": "What the Lawgiver has decisively commanded every legally accountable individual to perform; one who does it is rewarded, and one who abandons it is sinful.",
                     "fr": "Ce que le Législateur a ordonné de façon décisive à tout individu responsable d'accomplir ; celui qui l'accomplit est récompensé, et celui qui l'abandonne est fautif.",
                     "fa": "آنچه شارع به‌طور قطعی بر هر مکلفی واجب کرده است؛ انجام‌دهنده پاداش می‌گیرد و ترک‌کننده گناهکار است.",
                     "ms": "Apa yang Pembuat Syariat telah perintahkan secara tegas kepada setiap individu yang bertanggungjawab untuk melaksanakannya; yang melaksanakannya diberi pahala, dan yang meninggalkannya berdosa.",
-                    "ur": "وہ چیز جسے شارع نے ہر مکلف پر قطعی طور پر واجب کیا ہے؛ اسے کرنے والا ثواب پاتا ہے اور چھوڑنے والا گنہگار ہے۔"}},
+                    "ur": "وہ چیز جسے شارع نے ہر مکلف پر قطعی طور پر واجب کیا ہے؛ اسے کرنے والا ثواب پاتا ہے اور چھوڑنے والا گنہگار ہے。"}},
 ]
 
 IMAMS = [
-    {"name": {"ar": "الإمام مالك بن أنس الأصبحي", "en": "Imam Malik ibn Anas al-Asbahi", "fr": "L'imam Malik ibn Anas al-Asbahi", "fa": "امام مالک بن انس اصبحی", "ms": "Imam Malik bin Anas al-Asbahi", "ur": "امام مالک بن انس اصبحی"},
+    {"name": {"ar": "الإمام مالك بن أنس الأصبحي", "en": "Imam Malik ibn Anas al-Asbahi", 
+              "fr": "L'imam Malik ibn Anas al-Asbahi", "fa": "امام مالک بن انس اصبحی", 
+              "ms": "Imam Malik bin Anas al-Asbahi", "ur": "امام مالک بن انس اصبحی"},
      "school": MADHHAB_NAMES["maliki"], "lifespan": "93 - 179 AH",
      "birthplace": {"ar": "المدينة المنورة", "en": "Medina", "fr": "Médine", "fa": "مدینه منوره", "ms": "Madinah", "ur": "مدینہ منورہ"},
      "founding_place": {"ar": "المدينة المنورة", "en": "Medina", "fr": "Médine", "fa": "مدینه منوره", "ms": "Madinah", "ur": "مدینہ منورہ"},
@@ -925,10 +1155,14 @@ IMAMS = [
                   "fa": "ابن قاسم، سحنون، ابن رشد، قرافی، خلیل بن اسحاق",
                   "ms": "Ibn al-Qasim, Sahnun, Ibn Rushd, al-Qarafi, Khalil bin Ishaq",
                   "ur": "ابن قاسم، سحنون، ابن رشد، قرافی، خلیل بن اسحاق"}},
-    {"name": {"ar": "الإمام محمد بن إدريس الشافعي", "en": "Imam Muhammad ibn Idris al-Shafi'i", "fr": "L'imam Muhammad ibn Idris al-Chafi'i", "fa": "امام محمد بن ادریس شافعی", "ms": "Imam Muhammad bin Idris al-Syafie", "ur": "امام محمد بن ادریس شافعی"},
+    {"name": {"ar": "الإمام محمد بن إدريس الشافعي", "en": "Imam Muhammad ibn Idris al-Shafi'i", 
+              "fr": "L'imam Muhammad ibn Idris al-Chafi'i", "fa": "امام محمد بن ادریس شافعی", 
+              "ms": "Imam Muhammad bin Idris al-Syafie", "ur": "امام محمد بن ادریس شافعی"},
      "school": MADHHAB_NAMES["shafii"], "lifespan": "150 - 204 AH",
      "birthplace": {"ar": "غزة", "en": "Gaza", "fr": "Gaza", "fa": "غزه", "ms": "Gaza", "ur": "غزہ"},
-     "founding_place": {"ar": "بغداد ثم مصر (المذهب الجديد)", "en": "Baghdad, then Egypt (the new doctrine)", "fr": "Bagdad, puis l'Égypte (la nouvelle doctrine)", "fa": "بغداد سپس مصر (مذهب جدید)", "ms": "Baghdad, kemudian Mesir (mazhab baru)", "ur": "بغداد پھر مصر (نیا مذہب)"},
+     "founding_place": {"ar": "بغداد ثم مصر (المذهب الجديد)", "en": "Baghdad, then Egypt (the new doctrine)", 
+                        "fr": "Bagdad, puis l'Égypte (la nouvelle doctrine)", "fa": "بغداد سپس مصر (مذهب جدید)", 
+                        "ms": "Baghdad, kemudian Mesir (mazhab baru)", "ur": "بغداد پھر مصر (نیا مذہب)"},
      "scholars": {"ar": "المزني، البويطي، النووي، ابن حجر الهيتمي، الرافعي",
                   "en": "al-Muzani, al-Buwayti, al-Nawawi, Ibn Hajar al-Haytami, al-Rafi'i",
                   "fr": "al-Muzani, al-Buwayti, al-Nawawi, Ibn Hajar al-Haytami, al-Rafi'i",
@@ -946,180 +1180,81 @@ COUNTRIES = [
     {"flag": "🇴🇲", "name": {"ar": "عُمان", "en": "Oman", "fr": "Oman", "fa": "عمان", "ms": "Oman", "ur": "عمان"}, "madhab": "ibadi", "population": "4.7M"},
 ]
 
-def display_fiqh_rules(T):
+# ============================================
+# UI Components
+# ============================================
+
+def display_fiqh_rules(T: Dict) -> None:
+    """Display fiqh rules and principles section."""
     st.markdown("---")
     st.subheader(T["expander_rules"])
-
+    
     rules = {
         "اليقين لا يزول بالشك": {
             "definition": "إذا ثبت أمر بيقين فلا يزول إلا بيقين مثله، ولا يؤثر فيه مجرد الشك.",
             "example": "من تيقن الطهارة وشك في الحدث، يبقى على الطهارة.",
-            "maliki": "المالكية: يُبنى على اليقين في الطهارة والعبادات.",
-            "shafii": "الشافعية: قاعدة اليقين لا يزول بالشك أصل في باب الطهارة.",
-            "hanafi": "الحنفية: يُعمل باليقين ولا يُلتفت للشك.",
-            "hanbali": "الحنابلة: قاعدة اليقين لا يزول بالشك أصل في جميع العبادات."
         },
         "المشقة تجلب التيسير": {
             "definition": "عند وجود مشقة معتبرة في تطبيق الحكم الشرعي، يُفتح باب الرخصة والتخفيف.",
             "example": "قصر الصلاة في السفر أو الإفطار في المرض.",
-            "maliki": "المالكية: المشقة تجلب التيسير أصل في باب الصلاة والصيام.",
-            "shafii": "الشافعية: قاعدة التيسير عند المشقة أصل في جميع الأحكام.",
-            "hanafi": "الحنفية: الرخصة عند المشقة أصل في العبادات والمعاملات.",
-            "hanbali": "الحنابلة: التيسير عند المشقة هو الأصل في الأحكام."
         },
         "الضرر يزال": {
             "definition": "كل ما فيه ضرر على الفرد أو الجماعة يجب رفعه أو منعه.",
             "example": "منع الغش في البيع أو إزالة الأذى عن الطريق.",
-            "maliki": "المالكية: قاعدة الضرر يزال أصل في باب الضمانات.",
-            "shafii": "الشافعية: قاعدة الضرر يزال أصل في باب الحدود.",
-            "hanafi": "الحنفية: قاعدة الضرر يزال أصل في باب المعاملات.",
-            "hanbali": "الحنابلة: الضرر يزال أصل في جميع أبواب الفقه."
         },
         "العادة محكمة": {
             "definition": "العرف والعادة المعتبرة شرعًا تُعتبر في الأحكام ما لم تخالف نصًا شرعيًا.",
             "example": "أعراف الزواج أو البيع.",
-            "maliki": "المالكية: العادة محكمة أصل في باب النكاح.",
-            "shafii": "الشافعية: العادة محكمة أصل في باب المعاملات.",
-            "hanafi": "الحنفية: قاعدة العادة محكمة أصل في باب الأيمان.",
-            "hanbali": "الحنابلة: العادة محكمة أصل في باب العقود."
         },
         "الأمور بمقاصدها": {
             "definition": "الحكم على الأفعال يكون بحسب نية صاحبها ومقصده.",
             "example": "التفريق بين الصدقة والهدية.",
-            "maliki": "المالكية: الأمور بمقاصدها أصل في باب النيات.",
-            "shafii": "الشافعية: قاعدة الأمور بمقاصدها أصل في جميع العبادات.",
-            "hanafi": "الحنفية: الأمور بمقاصدها أصل في باب الطهارة.",
-            "hanbali": "الحنابلة: الأمور بمقاصدها أصل في باب الصلاة."
         },
         "الضرورات تبيح المحظورات": {
             "definition": "عند الضرورة يجوز ارتكاب المحظور بقدر الحاجة فقط.",
             "example": "أكل الميتة عند الخوف من الهلاك.",
-            "maliki": "المالكية: الضرورات تبيح المحظورات أصل في باب الأطعمة.",
-            "shafii": "الشافعية: قاعدة الضرورات تبيح المحظورات أصل في باب الضرورات.",
-            "hanafi": "الحنفية: الضرورات تبيح المحظورات أصل في باب المضطر.",
-            "hanbali": "الحنابلة: الضرورات تبيح المحظورات أصل في باب الاضطرار."
-        },
-        "الوسائل لها أحكام المقاصد": {
-            "definition": "ما كان وسيلة لشيء يأخذ حكم ذلك الشيء.",
-            "example": "الكتابة في العقود لحفظ الحقوق.",
-            "maliki": "المالكية: الوسائل لها أحكام المقاصد أصل في باب الشهادات.",
-            "shafii": "الشافعية: قاعدة الوسائل لها أحكام المقاصد أصل في باب العقود.",
-            "hanafi": "الحنفية: الوسائل لها أحكام المقاصد أصل في باب الوكالة.",
-            "hanbali": "الحنابلة: الوسائل لها أحكام المقاصد أصل في باب القضاء."
-        },
-        "القياس": {
-            "definition": "إلحاق فرع بأصل في الحكم لعلة جامعة بينهما.",
-            "example": "قياس المخدرات على الخمر في التحريم لعلة الإسكار.",
-            "maliki": "المالكية: القياس أصل في باب الحدود.",
-            "shafii": "الشافعية: القياس أصل في جميع أبواب الفقه.",
-            "hanafi": "الحنفية: القياس أصل في باب المعاملات.",
-            "hanbali": "الحنابلة: القياس أصل في باب العبادات."
-        },
-        "المصالح المرسلة": {
-            "definition": "اعتبار المصلحة التي لم يرد نص خاص بها ولم تُلغَ، إذا كانت تحقق منفعة عامة.",
-            "example": "توثيق العقود بالكتابة.",
-            "maliki": "المالكية: المصالح المرسلة أصل في باب السياسة الشرعية.",
-            "shafii": "الشافعية: المصالح المرسلة أصل في باب القياس.",
-            "hanafi": "الحنفية: المصالح المرسلة أصل في باب الاستحسان.",
-            "hanbali": "الحنابلة: المصالح المرسلة أصل في باب المصالح."
-        },
-        "الخاص يحكم العام": {
-            "definition": "إذا ورد نص عام ونص خاص، يُقدَّم الخاص في التطبيق.",
-            "example": "قوله تعالى: (وأحل الله البيع) عام، وقوله: (حرمت عليكم الميتة) خاص.",
-            "maliki": "المالكية: الخاص يحكم العام أصل في باب التخصيص.",
-            "shafii": "الشافعية: الخاص يحكم العام أصل في باب الناسخ والمنسوخ.",
-            "hanafi": "الحنفية: الخاص يحكم العام أصل في باب الأحكام.",
-            "hanbali": "الحنابلة: الخاص يحكم العام أصل في باب التفسير."
-        },
-        "الحكم على الشيء جزء من تصوره": {
-            "definition": "لا يمكن الحكم على مسألة إلا بعد فهم حقيقتها وصورتها الكاملة.",
-            "example": "معرفة تفاصيل عقد جديد قبل إصدار حكم.",
-            "maliki": "المالكية: الحكم على الشيء جزء من تصوره أصل في باب القضاء.",
-            "shafii": "الشافعية: قاعدة الحكم على الشيء جزء من تصوره أصل في باب الاجتهاد.",
-            "hanafi": "الحنفية: الحكم على الشيء جزء من تصوره أصل في باب الاستنباط.",
-            "hanbali": "الحنابلة: الحكم على الشيء جزء من تصوره أصل في باب الفتوى."
-        },
-        "الشدة تجلب التيسير": {
-            "definition": "إذا اشتدت الظروف أو الأحوال، يُفتح باب التيسير والرخصة.",
-            "example": "التيمم عند فقد الماء.",
-            "maliki": "المالكية: الشدة تجلب التيسير أصل في باب الصلاة.",
-            "shafii": "الشافعية: الشدة تجلب التيسير أصل في باب الطهارة.",
-            "hanafi": "الحنفية: الشدة تجلب التيسير أصل في باب الصيام.",
-            "hanbali": "الحنابلة: الشدة تجلب التيسير أصل في باب الحج."
-        },
-        "الإجماع": {
-            "definition": "اتفاق علماء الأمة في عصر من العصور على حكم شرعي، ويُعتبر من أقوى الأدلة بعد القرآن والسنة.",
-            "example": "إجماع الصحابة على حرمة الخمر.",
-            "maliki": "المالكية: الإجماع أصل في باب الأحكام.",
-            "shafii": "الشافعية: الإجماع أصل في باب الأدلة.",
-            "hanafi": "الحنفية: الإجماع أصل في باب الأصول.",
-            "hanbali": "الحنابلة: الإجماع أصل في باب العقيدة."
-        },
-        "الشاذ": {
-            "definition": "الرأي الذي يخالف جمهور العلماء أو يخالف القواعد المستقرة، ولا يُعمل به غالبًا.",
-            "example": "رأي ابن حزم الظاهري في بعض المسائل.",
-            "maliki": "المالكية: الشاذ لا يُعمل به عند المالكية.",
-            "shafii": "الشافعية: الشاذ لا يُعمل به عند الشافعية.",
-            "hanafi": "الحنفية: الشاذ لا يُعمل به عند الحنفية.",
-            "hanbali": "الحنابلة: الشاذ لا يُعمل به عند الحنابلة."
         },
         "لا ضرر ولا ضرار": {
             "definition": "قاعدة مأخوذة من حديث النبي ﷺ: (لا ضرر ولا ضرار)، وتعني أنه لا يجوز إيقاع الضرر بالنفس أو بالغير، ولا يجوز رد الضرر بضرر مثله.",
             "example": "منع البناء الذي يضر بالجار.",
-            "maliki": "المالكية: لا ضرر ولا ضرار أصل في باب الجوار.",
-            "shafii": "الشافعية: لا ضرر ولا ضرار أصل في باب الحدود.",
-            "hanafi": "الحنفية: لا ضرر ولا ضرار أصل في باب المعاملات.",
-            "hanbali": "الحنابلة: لا ضرر ولا ضرار أصل في جميع أبواب الفقه."
-        }
+        },
     }
-
+    
     options = ["عرض جميع القواعد دفعة واحدة"] + list(rules.keys())
-
-    st.caption("📌 القواعد الفقهية هي الأسس الكلية التي يُبنى عليها الفقه الإسلامي، وتساعد في فهم الأحكام الشرعية بشكل أعمق.")
-    st.caption("📌 اختر قاعدة لعرض شرحها أو اختر 'عرض جميع القواعد دفعة واحدة' لاستعراضها كاملة.")
-
     selected_rule = st.selectbox("🔎 اختر قاعدة لعرض شرحها", options, key="fiqh_rules")
-
+    
     if selected_rule == "عرض جميع القواعد دفعة واحدة":
         st.markdown("### 📖 جميع القواعد والأصول الفقهية")
         for rule, data in rules.items():
             with st.expander(f"📌 {rule}"):
                 st.markdown(f"**التعريف:** {data['definition']}")
                 st.markdown(f"**مثال:** {data['example']}")
-                st.markdown("---")
-                st.markdown("**📝 آراء المذاهب:**")
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.markdown(f"**المالكية:** {data['maliki']}")
-                    st.markdown(f"**الشافعية:** {data['shafii']}")
-                with col2:
-                    st.markdown(f"**الحنفية:** {data['hanafi']}")
-                    st.markdown(f"**الحنابلة:** {data['hanbali']}")
     else:
         data = rules[selected_rule]
         st.markdown(f"### 📌 {selected_rule}")
         st.markdown(f"**التعريف:** {data['definition']}")
         st.markdown(f"**مثال:** {data['example']}")
-        st.markdown("---")
-        st.markdown("**📝 آراء المذاهب:**")
-        col1, col2 = st.columns(2)
-        with col1:
-            st.markdown(f"**المالكية:** {data['maliki']}")
-            st.markdown(f"**الشافعية:** {data['shafii']}")
-        with col2:
-            st.markdown(f"**الحنفية:** {data['hanafi']}")
-            st.markdown(f"**الحنابلة:** {data['hanbali']}")
 
-    st.markdown("---")
+# ============================================
+# Main Application
+# ============================================
 
 def main():
-    init_db()
-    ensure_reference_table()
-    seed_initial_issues()
-
+    """Main application entry point."""
+    
+    # Initialize services
+    db = DatabaseManager()
+    ai = AIService()
+    search_service = SearchService(db, ai)
+    ref_manager = ReferenceManager(db, ai)
+    
+    # Initialize session state
     if "lang" not in st.session_state:
         st.session_state.lang = "ar"
-
+    if "session_comments" not in st.session_state:
+        st.session_state.session_comments = []
+    
+    # Language selector
     top_l, top_r = st.columns([5, 2])
     with top_r:
         lang_choice = st.radio(
@@ -1129,13 +1264,16 @@ def main():
             horizontal=True,
         )
         st.session_state.lang = LANGS[lang_choice]
-
+    
     lang = st.session_state.lang
     T = UI[lang]
+    
+    # RTL support
     is_rtl = lang in ["ar", "fa", "ur"]
     direction = "rtl" if is_rtl else "ltr"
     align = "right" if is_rtl else "left"
-
+    
+    # Custom CSS
     st.markdown(f"""
     <style>
     .stApp {{ direction: {direction}; }}
@@ -1163,9 +1301,18 @@ def main():
         font-style: italic; font-size: 1rem; color: #b08d3f;
         text-align: center; margin: 6px 0 18px 0;
     }}
+    .info-box {{
+        background: #f8f9fa; border-radius: 10px; padding: 12px 16px;
+        margin-bottom: 12px; border-left: 4px solid #2a5c4a;
+    }}
+    .country-box {{
+        background: #f8f9fa; border-radius: 10px; padding: 12px;
+        margin-bottom: 10px; text-align: center;
+    }}
     </style>
     """, unsafe_allow_html=True)
-
+    
+    # App header with logo
     st.markdown("""
     <div style="text-align:center; margin-bottom:-6px;">
         <svg width="88" height="88" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
@@ -1183,34 +1330,34 @@ def main():
         </svg>
     </div>
     """, unsafe_allow_html=True)
-
+    
     st.markdown(f"""
     <div class="app-header">
         <h1>📖 {T['app_title']}</h1>
         <p>{T['app_subtitle']}</p>
     </div>
     """, unsafe_allow_html=True)
-
+    
     if not USE_GEMINI:
         st.caption(f"ℹ️ {T['ai_unavailable']}")
-
+    
+    # Admin: CSV Import
     with st.expander("📥 استيراد مسائل من CSV (للمشرفين)", expanded=False):
-        st.info("""
-        **تنسيق CSV المطلوب:** يجب أن يحتوي على جميع الأعمدة المطابقة لقاعدة البيانات.
-        """)
+        st.info("**تنسيق CSV المطلوب:** يجب أن يحتوي على جميع الأعمدة المطابقة لقاعدة البيانات.")
         uploaded = st.file_uploader("اختر ملف CSV", type=["csv"])
         if uploaded:
             try:
-                count = import_from_csv(uploaded.read())
+                count = db.import_from_csv(uploaded.read())
                 st.success(f"✅ تم استيراد {count} مسألة بنجاح!")
             except Exception as e:
                 st.error(f"❌ خطأ: {e}")
-
+    
+    # RAG Management
     with st.expander(T["rag_expander"]):
         if not USE_GEMINI:
             st.warning(T["ai_unavailable"])
         st.caption(T["rag_intro"])
-
+        
         ref_title = st.text_input(T["rag_title_label"], key="rag_title_input")
         ref_madhab = st.selectbox(
             T["rag_madhab_label"],
@@ -1220,7 +1367,7 @@ def main():
         )
         ref_text = st.text_area(T["rag_text_label"], height=150, key="rag_text_input")
         ref_file = st.file_uploader(T["rag_file_label"], type=["txt"], key="rag_file_input")
-
+        
         if st.button(T["rag_submit"], disabled=not USE_GEMINI):
             content = ref_text.strip()
             if not content and ref_file:
@@ -1229,20 +1376,21 @@ def main():
                 st.warning(T["rag_empty_warning"])
             else:
                 with st.spinner(T["rag_processing"]):
-                    n_chunks = add_reference_document(ref_title.strip(), ref_madhab, content)
+                    n_chunks = ref_manager.add_document(ref_title.strip(), ref_madhab, content)
                 if n_chunks > 0:
                     st.success(T["rag_success"].format(n_chunks, ref_title.strip()))
                 else:
                     st.error(T["rag_failed"])
-
+        
         st.markdown(f"**{T['rag_current_sources']}**")
-        sources = list_reference_sources()
+        sources = db.list_reference_sources()
         if sources:
             for title, n in sources:
                 st.markdown(f"- {title} ({n})")
         else:
             st.caption(T["rag_no_sources"])
-
+    
+    # Main search interface
     st.markdown(f"### {T['s1_title']}")
     group_code = st.radio(
         T["group_q"],
@@ -1253,6 +1401,7 @@ def main():
     )
     sub_codes = GROUPS[group_code]["members"]
     st.caption(T["multi_hint"])
+    
     if len(sub_codes) > 1:
         selected_madhabs = st.multiselect(
             T["sub_select"],
@@ -1263,7 +1412,7 @@ def main():
     else:
         selected_madhabs = sub_codes
         st.caption(f"**{MADHHAB_NAMES[sub_codes[0]][lang]}**")
-
+    
     st.divider()
     st.markdown(f"### {T['s2_title']}")
     topic = st.radio(
@@ -1273,7 +1422,7 @@ def main():
         horizontal=True,
         label_visibility="collapsed",
     )
-
+    
     st.divider()
     st.markdown(f"### {T['s3_title']}")
     level = st.radio(
@@ -1283,52 +1432,53 @@ def main():
         horizontal=True,
         label_visibility="collapsed",
     )
-
+    
     st.divider()
     st.markdown(f"### {T['s4_title']}")
     question = st.text_input(
         T["s4_title"], placeholder=T["question_placeholder"], label_visibility="collapsed"
     )
     search_clicked = st.button(T["search_btn"], use_container_width=True)
-
+    
     st.divider()
     st.markdown(f"### {T['s5_title']}")
-
+    
+    # Process search
     if search_clicked and not selected_madhabs:
         st.warning(T["no_madhab_warning"])
     elif search_clicked and question:
-        results = search_issues(question, topic, selected_madhabs, level, lang, T, MADHHAB_NAMES, TOPICS)
+        results = search_service.search(question, topic, selected_madhabs, level, lang, T)
         ai_used = False
         rag_used = False
-
+        
+        # Try RAG if no results
         if not results and USE_GEMINI:
             with st.spinner(T["ai_generating"]):
-                rag_cards = rag_generate_answer(question, lang, selected_madhabs, level, T)
-            if rag_cards:
-                results = [{"title": question, "topic": TOPICS[topic][lang], "cards": rag_cards}]
-                rag_used = True
-
+                chunks = ref_manager.retrieve_relevant_chunks(question, top_k=6)
+                if chunks:
+                    rag_cards = ai.rag_generate_answer(question, lang, selected_madhabs, level, T, chunks)
+                    if rag_cards:
+                        results = [SearchResult(title=question, topic=TOPICS[topic][lang], cards=rag_cards)]
+                        rag_used = True
+        
+        # Try AI generation if no results
         if not results and USE_GEMINI:
             with st.spinner(T["ai_generating"]):
-                ai_cards = ai_generate_answer(question, lang, selected_madhabs, level, T)
-            if ai_cards:
-                results = [{"title": question, "topic": TOPICS[topic][lang], "cards": ai_cards}]
-                ai_used = True
-
+                ai_cards = ai.ai_generate_answer(question, lang, selected_madhabs, level, T)
+                if ai_cards:
+                    results = [SearchResult(title=question, topic=TOPICS[topic][lang], cards=ai_cards)]
+                    ai_used = True
+        
+        # Display results
         if results:
             if ai_used:
                 st.warning(T["ai_disclaimer"])
             for r in results:
-                st.markdown(f"**📌 {r['title']}** &nbsp;·&nbsp; _{r['topic']}_")
-                cols = st.columns(len(r["cards"])) if len(r["cards"]) > 1 else [st.container()]
-                for col, card in zip(cols, r["cards"]):
+                st.markdown(f"**📌 {r.title}** &nbsp;·&nbsp; _{r.topic}_")
+                cols = st.columns(len(r.cards)) if len(r.cards) > 1 else [st.container()]
+                for col, card in zip(cols, r.cards):
                     with col:
-                        if ai_used:
-                            card_class = "answer-card ai-card"
-                        elif rag_used:
-                            card_class = "answer-card rag-card"
-                        else:
-                            card_class = "answer-card"
+                        card_class = "answer-card rag-card" if rag_used else "answer-card ai-card" if ai_used else "answer-card"
                         st.markdown(f"""
                         <div class="{card_class}">
                             <h4>{card['label']}</h4>
@@ -1345,9 +1495,10 @@ def main():
         st.info(T["no_question_warning"])
     else:
         st.caption(T["answer_placeholder"])
-
+    
     st.markdown("---")
-
+    
+    # Information expanders
     with st.expander(T["expander_imams"]):
         for imam in IMAMS:
             st.markdown(f"""
@@ -1358,7 +1509,7 @@ def main():
                 <p>🎓 {T['scholars']}: {imam['scholars'][lang]}</p>
             </div>
             """, unsafe_allow_html=True)
-
+    
     with st.expander(T["expander_countries"]):
         cols = st.columns(3)
         for i, c in enumerate(COUNTRIES):
@@ -1370,21 +1521,20 @@ def main():
                     <span style="font-size:0.8rem; color:#6a7f78;">👥 {T['population']}: {c['population']}</span>
                 </div>
                 """, unsafe_allow_html=True)
-
+    
     with st.expander(T["expander_glossary"]):
         for term in GLOSSARY:
             st.markdown(f"""
-            <div class="glossary-box">
+            <div class="info-box">
                 <h4>{term['term'][lang]}</h4>
                 <p>{term['definition'][lang]}</p>
             </div>
             """, unsafe_allow_html=True)
-
+    
     display_fiqh_rules(T)
-
+    
+    # Comments section
     with st.expander(T["expander_comments"]):
-        if "session_comments" not in st.session_state:
-            st.session_state.session_comments = []
         st.markdown(f"**{T['rating_label']}**")
         try:
             rating = st.feedback("stars")
@@ -1392,19 +1542,22 @@ def main():
                 rating = rating + 1
         except:
             rating = st.radio(T["rating_label"], [1, 2, 3, 4, 5], format_func=lambda n: "⭐" * n, horizontal=True, label_visibility="collapsed")
+        
         comment_text = st.text_area(T["comment_placeholder"], placeholder=T["comment_placeholder"], label_visibility="collapsed")
+        
         if st.button(T["comment_submit"]):
             if comment_text.strip():
                 st.session_state.session_comments.append({"text": comment_text.strip(), "rating": rating or 5})
                 st.success(T["comment_success"])
             else:
                 st.warning(T["comment_warning"])
+        
         if st.session_state.session_comments:
             st.markdown(f"**{T['comments_title']}**")
             for c in st.session_state.session_comments:
                 st.markdown(f"- {'⭐' * int(c['rating'])} — {c['text']}")
         st.caption(T["comments_note"])
 
+
 if __name__ == "__main__":
     main()
-```
