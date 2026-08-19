@@ -601,7 +601,7 @@ UI = {
         "ai_disclaimer": "⚠️ This answer was generated automatically by AI because this issue isn't in the verified database yet.",
         "ai_generating": "🤖 Generating an AI answer...",
         "ai_unavailable": "Automatic AI answering is currently disabled.",
-        "rag_badge": "📖 Based on uploaded references
+        "rag_badge": "📖 Based on uploaded references"
         "rag_expander": "📁 Manage References (RAG) — Admins",
         "rag_intro": "Upload fiqh reference texts you have rights to use; the system will chunk them and search semantically.",
         "rag_title_label": "Source title",
