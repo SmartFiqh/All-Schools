@@ -9,7 +9,7 @@ import io
 import datetime
 import numpy as np
 from typing import List, Dict, Optional, Any, Tuple
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 import hashlib
 import logging
 
@@ -768,7 +768,9 @@ UI = {
         "expander_imams": "📜 الأئمة المؤسسون للمذاهب",
         "expander_countries": "🗺️ الدول الإسلامية والمذهب الرسمي السائد",
         "expander_glossary": "📚 مصطلحات فقهية رئيسية",
-        "expander_rules": "📘 القواعد والأصول الفقهية الرئيسية",
+        "rules_title": "📘 القواعد والأصول الفقهية الرئيسية",
+        "rules_definition": "التعريف",
+        "rules_example": "مثال",
         "expander_comments": "💬 أضف تعليقك أو ملاحظتك",
         "rating_label": "قيّم فائدة الإجابة:",
         "comment_placeholder": "اكتب ملاحظتك هنا...",
@@ -827,7 +829,9 @@ UI = {
         "expander_imams": "📜 The Founding Imams of the Schools",
         "expander_countries": "🗺️ Muslim-Majority Countries & Their Prevailing Official School",
         "expander_glossary": "📚 Key Juristic Terms",
-        "expander_rules": "📘 Key Jurisprudential Rules and Principles",
+        "rules_title": "📘 Key Jurisprudential Rules and Principles",
+        "rules_definition": "Definition",
+        "rules_example": "Example",
         "expander_comments": "💬 Add Your Comment or Note",
         "rating_label": "Rate how helpful this answer was:",
         "comment_placeholder": "Write your note here...",
@@ -886,7 +890,9 @@ UI = {
         "expander_imams": "📜 Les Imams Fondateurs des Écoles",
         "expander_countries": "🗺️ Pays à Majorité Musulmane et Leur École Officielle Dominante",
         "expander_glossary": "📚 Termes Juridiques Clés",
-        "expander_rules": "📘 Règles et principes juridiques clés",
+        "rules_title": "📘 Règles et principes juridiques clés",
+        "rules_definition": "Définition",
+        "rules_example": "Exemple",
         "expander_comments": "💬 Ajoutez Votre Commentaire ou Remarque",
         "rating_label": "Évaluez l'utilité de cette réponse :",
         "comment_placeholder": "Écrivez votre remarque ici...",
@@ -945,7 +951,9 @@ UI = {
         "expander_imams": "📜 ائمه مؤسس مذاهب",
         "expander_countries": "🗺️ کشورهای اسلامی و مذهب رسمی",
         "expander_glossary": "📚 اصطلاحات کلیدی فقهی",
-        "expander_rules": "📘 قواعد و اصول فقهی اصلی",
+        "rules_title": "📘 قواعد و اصول فقهی اصلی",
+        "rules_definition": "تعریف",
+        "rules_example": "مثال",
         "expander_comments": "💬 نظر یا پیشنهاد خود را اضافه کنید",
         "rating_label": "میزان مفید بودن پاسخ را ارزیابی کنید:",
         "comment_placeholder": "نظر خود را اینجا بنویسید...",
@@ -1004,7 +1012,9 @@ UI = {
         "expander_imams": "📜 Imam Pengasas Mazhab",
         "expander_countries": "🗺️ Negara Islam & Mazhab Rasmi",
         "expander_glossary": "📚 Istilah Fiqh Utama",
-        "expander_rules": "📘 Peraturan dan Prinsip Fiqh Utama",
+        "rules_title": "📘 Peraturan dan Prinsip Fiqh Utama",
+        "rules_definition": "Definisi",
+        "rules_example": "Contoh",
         "expander_comments": "💬 Tambah Ulasan atau Nota Anda",
         "rating_label": "Nilaikan kemanfaatan jawapan ini:",
         "comment_placeholder": "Tulis ulasan anda di sini...",
@@ -1063,7 +1073,9 @@ UI = {
         "expander_imams": "📜 مذاہب کے بانی ائمہ",
         "expander_countries": "🗺️ اسلامی ممالک اور سرکاری مذہب",
         "expander_glossary": "📚 اہم فقہی اصطلاحات",
-        "expander_rules": "📘 اہم فقہی اصول و قواعد",
+        "rules_title": "📘 اہم فقہی اصول و قواعد",
+        "rules_definition": "تعریف",
+        "rules_example": "مثال",
         "expander_comments": "💬 اپنا تبصرہ یا نوٹ شامل کریں",
         "rating_label": "اس جواب کی افادیت کی درجہ بندی کریں:",
         "comment_placeholder": "اپنا تبصرہ یہاں لکھیں...",
@@ -1314,6 +1326,7 @@ def display_fiqh_rules(lang: str, T: Dict) -> None:
                     <p><strong>{T['rules_example']}:</strong> {rule_content.get('example', '')}</p>
                 </div>
                 """, unsafe_allow_html=True)
+
 # ============================================
 # Main Application
 # ============================================
@@ -1610,7 +1623,8 @@ def main():
             </div>
             """, unsafe_allow_html=True)
     
-    display_fiqh_rules(T)
+    # Display Fiqh Rules with translation support
+    display_fiqh_rules(lang, T)
     
     # Comments section
     with st.expander(T["expander_comments"]):
