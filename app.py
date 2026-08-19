@@ -38,13 +38,11 @@ except ImportError:
 
 def get_gemini_api_key() -> Optional[str]:
     """Get Gemini API key from multiple sources with priority."""
-    # Priority 1: Streamlit secrets
     try:
         return st.secrets["GEMINI_API_KEY"]
     except (KeyError, AttributeError):
         pass
     
-    # Priority 2: Environment variables
     if DOTENV_AVAILABLE:
         return os.getenv("GEMINI_API_KEY")
     
@@ -81,7 +79,6 @@ class Issue:
     rulings_by_madhab: Dict[str, Dict[str, str]]
     
     def get_ruling(self, level: str = "full") -> str:
-        """Get ruling at specified detail level."""
         return self.rulings.get(level, self.rulings.get("full", ""))
 
 
@@ -97,7 +94,7 @@ class SearchResult:
 # ============================================
 
 class DatabaseManager:
-    """Manages database operations with connection pooling and error handling."""
+    """Manages database operations."""
     
     def __init__(self, db_path: str = DB_PATH):
         self.db_path = db_path
@@ -106,17 +103,14 @@ class DatabaseManager:
         self._seed_initial_issues()
     
     def _get_connection(self) -> sqlite3.Connection:
-        """Get database connection with proper settings."""
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         return conn
     
     def _init_db(self) -> None:
-        """Initialize database tables."""
         with self._get_connection() as conn:
             c = conn.cursor()
             
-            # Issues table
             c.execute('''
                 CREATE TABLE IF NOT EXISTS issues (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -139,7 +133,6 @@ class DatabaseManager:
                 )
             ''')
             
-            # Reference chunks table
             c.execute('''
                 CREATE TABLE IF NOT EXISTS reference_chunks (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -152,7 +145,6 @@ class DatabaseManager:
                 )
             ''')
             
-            # Indexes for performance
             c.execute('CREATE INDEX IF NOT EXISTS idx_issues_topic ON issues(topic)')
             c.execute('CREATE INDEX IF NOT EXISTS idx_chunks_source ON reference_chunks(source_title)')
             c.execute('CREATE INDEX IF NOT EXISTS idx_chunks_madhab ON reference_chunks(madhab_tag)')
@@ -160,7 +152,6 @@ class DatabaseManager:
             conn.commit()
     
     def _ensure_reference_table(self) -> None:
-        """Ensure reference table has all required columns."""
         with self._get_connection() as conn:
             c = conn.cursor()
             c.execute("PRAGMA table_info(reference_chunks)")
@@ -173,7 +164,6 @@ class DatabaseManager:
             conn.commit()
     
     def _seed_initial_issues(self) -> None:
-        """Seed database with initial issues if empty."""
         with self._get_connection() as conn:
             c = conn.cursor()
             c.execute("SELECT COUNT(*) FROM issues")
@@ -189,7 +179,6 @@ class DatabaseManager:
             conn.commit()
     
     def _get_seed_data(self) -> List[Dict]:
-        """Get seed data for initial issues."""
         return [{
             "topic": "ibadat",
             "title_ar": "صلاة الجماعة",
@@ -240,7 +229,6 @@ class DatabaseManager:
         }]
     
     def load_issues(self, lang: str, topic_filter: str = "all") -> List[Issue]:
-        """Load issues from database."""
         with self._get_connection() as conn:
             c = conn.cursor()
             
@@ -276,7 +264,6 @@ class DatabaseManager:
             return issues
     
     def import_from_csv(self, csv_content: bytes) -> int:
-        """Import issues from CSV content."""
         with self._get_connection() as conn:
             c = conn.cursor()
             reader = csv.DictReader(io.StringIO(csv_content.decode('utf-8')))
@@ -318,7 +305,6 @@ class DatabaseManager:
             return count
     
     def add_reference_chunk(self, title: str, madhab_tag: str, chunk: str, embedding: List[float]) -> bool:
-        """Add a reference chunk with embedding."""
         chunk_hash = hashlib.md5(chunk.encode()).hexdigest()
         now = datetime.datetime.utcnow().isoformat()
         
@@ -334,11 +320,9 @@ class DatabaseManager:
                 conn.commit()
                 return True
             except sqlite3.IntegrityError:
-                # Duplicate chunk, skip
                 return False
     
     def get_reference_chunks(self) -> List[Dict]:
-        """Get all reference chunks with embeddings."""
         with self._get_connection() as conn:
             c = conn.cursor()
             c.execute("SELECT id, source_title, madhab_tag, chunk_text, embedding FROM reference_chunks")
@@ -346,14 +330,12 @@ class DatabaseManager:
             return [dict(row) for row in rows]
     
     def count_reference_chunks(self) -> int:
-        """Count total reference chunks."""
         with self._get_connection() as conn:
             c = conn.cursor()
             c.execute("SELECT COUNT(*) FROM reference_chunks")
             return c.fetchone()[0]
     
     def list_reference_sources(self) -> List[Tuple[str, int]]:
-        """List all reference sources with chunk counts."""
         with self._get_connection() as conn:
             c = conn.cursor()
             c.execute("SELECT source_title, COUNT(*) FROM reference_chunks GROUP BY source_title")
@@ -364,15 +346,12 @@ class DatabaseManager:
 # ============================================
 
 class AIService:
-    """Handles all AI operations including embedding and generation."""
-    
     def __init__(self):
         self.available = USE_GEMINI
         if not self.available:
             logger.warning("AI service not available")
     
     def embed_text(self, text: str, task_type: str = "retrieval_document") -> Optional[List[float]]:
-        """Generate embedding for a single text."""
         if not self.available or not text:
             return None
         
@@ -384,7 +363,6 @@ class AIService:
             return None
     
     def embed_texts(self, texts: List[str], task_type: str = "retrieval_document") -> Optional[List[List[float]]]:
-        """Generate embeddings for multiple texts."""
         if not self.available or not texts:
             return None
         
@@ -399,7 +377,6 @@ class AIService:
             return None
     
     def generate(self, prompt: str) -> Optional[str]:
-        """Generate content using AI model."""
         if not self.available:
             return None
         
@@ -411,7 +388,6 @@ class AIService:
             return None
     
     def semantic_search(self, query: str, issues: List[Issue], lang: str) -> Optional[List[int]]:
-        """Find semantically relevant issues."""
         if not self.available or not issues:
             return None
         
@@ -440,7 +416,6 @@ class AIService:
     
     def rag_generate_answer(self, question: str, lang: str, madhab_codes: List[str], 
                            level: str, T: Dict, chunks: List[Dict]) -> Optional[List[Dict]]:
-        """Generate answer based on RAG chunks."""
         if not self.available or not chunks:
             return None
         
@@ -499,7 +474,6 @@ class AIService:
     
     def ai_generate_answer(self, question: str, lang: str, madhab_codes: List[str], 
                           level: str, T: Dict) -> Optional[List[Dict]]:
-        """Generate AI answer from general knowledge."""
         if not self.available or not madhab_codes:
             return None
         
@@ -555,8 +529,6 @@ class AIService:
 # ============================================
 
 class SearchService:
-    """Handles search operations with caching."""
-    
     def __init__(self, db: DatabaseManager, ai: AIService):
         self.db = db
         self.ai = ai
@@ -564,7 +536,6 @@ class SearchService:
     
     def search(self, query: str, topic_filter: str, madhabs: List[str], 
                level: str, lang: str, T: Dict) -> List[SearchResult]:
-        """Search for issues matching the query."""
         if not query:
             return []
         
@@ -578,7 +549,6 @@ class SearchService:
         
         q = query.strip().lower()
         
-        # Try semantic search first
         semantic_ids = self.ai.semantic_search(q, all_issues, lang) if self.ai.available else None
         
         results = []
@@ -588,7 +558,6 @@ class SearchService:
                 if issue and issue not in results:
                     results.append(issue)
         
-        # Fallback to keyword search
         if not results:
             for issue in all_issues:
                 pool = (issue.title.lower() + " " +
@@ -604,7 +573,6 @@ class SearchService:
                     if any(w in pool for w in words):
                         results.append(issue)
         
-        # Build search results
         final_results = []
         for issue in results:
             cards = []
@@ -640,14 +608,11 @@ class SearchService:
 # ============================================
 
 class ReferenceManager:
-    """Manages reference documents for RAG."""
-    
     def __init__(self, db: DatabaseManager, ai: AIService):
         self.db = db
         self.ai = ai
     
     def chunk_text(self, text: str, max_chars: int = 700, overlap: int = 100) -> List[str]:
-        """Split text into overlapping chunks."""
         text = re.sub(r'\s+', ' ', text).strip()
         if not text:
             return []
@@ -662,7 +627,6 @@ class ReferenceManager:
         return [c for c in chunks if len(c) > 30]
     
     def add_document(self, title: str, madhab_tag: str, raw_text: str) -> int:
-        """Add a document to reference index."""
         chunks = self.chunk_text(raw_text)
         if not chunks:
             return 0
@@ -680,7 +644,6 @@ class ReferenceManager:
     
     def retrieve_relevant_chunks(self, query: str, top_k: int = 5, 
                                  min_similarity: float = 0.55) -> List[Dict]:
-        """Retrieve relevant chunks for a query."""
         total = self.db.count_reference_chunks()
         if total == 0:
             return []
@@ -757,7 +720,7 @@ LEVELS = {
 }
 
 # ============================================
-# UI Translations (abbreviated for space)
+# UI Translations
 # ============================================
 
 UI = {
