@@ -1138,56 +1138,181 @@ COUNTRIES = [
 # UI Components
 # ============================================
 
-def display_fiqh_rules(T: Dict) -> None:
-    """Display fiqh rules and principles section."""
+def display_fiqh_rules(lang: str, T: Dict) -> None:
+    """Display fiqh rules and principles section with multilingual support."""
     st.markdown("---")
-    st.subheader(T["expander_rules"])
     
-    rules = {
+    # تعريف القواعد مع ترجمات لكل اللغات
+    rules_data = {
         "اليقين لا يزول بالشك": {
-            "definition": "إذا ثبت أمر بيقين فلا يزول إلا بيقين مثله، ولا يؤثر فيه مجرد الشك.",
-            "example": "من تيقن الطهارة وشك في الحدث، يبقى على الطهارة.",
+            "ar": {"definition": "إذا ثبت أمر بيقين فلا يزول إلا بيقين مثله، ولا يؤثر فيه مجرد الشك.",
+                   "example": "من تيقن الطهارة وشك في الحدث، يبقى على الطهارة."},
+            "en": {"definition": "Certainty cannot be overridden by doubt.",
+                   "example": "If someone is certain of purity and doubts impurity, they remain in a state of purity."},
+            "fr": {"definition": "La certitude ne peut être remplacée par le doute.",
+                   "example": "Si quelqu'un est certain de la pureté et doute de l'impureté, il reste en état de pureté."},
+            "fa": {"definition": "یقین به شک زایل نمی‌شود.",
+                   "example": "کسی که یقین به طهارت دارد و به حدث شک می‌کند، بر طهارت باقی می‌ماند."},
+            "ms": {"definition": "Keyakinan tidak boleh digantikan dengan keraguan.",
+                   "example": "Jika seseorang yakin suci dan ragu najis, dia kekal dalam keadaan suci."},
+            "ur": {"definition": "یقین شک سے زائل نہیں ہوتا۔",
+                   "example": "جو شخص طہارت پر یقین رکھتا ہے اور حدث پر شک کرتا ہے، وہ طہارت پر باقی رہتا ہے۔"}
         },
         "المشقة تجلب التيسير": {
-            "definition": "عند وجود مشقة معتبرة في تطبيق الحكم الشرعي، يُفتح باب الرخصة والتخفيف.",
-            "example": "قصر الصلاة في السفر أو الإفطار في المرض.",
+            "ar": {"definition": "عند وجود مشقة معتبرة في تطبيق الحكم الشرعي، يُفتح باب الرخصة والتخفيف.",
+                   "example": "قصر الصلاة في السفر أو الإفطار في المرض."},
+            "en": {"definition": "Hardship brings ease in Islamic jurisprudence.",
+                   "example": "Shortening prayers during travel or breaking fast during illness."},
+            "fr": {"definition": "La difficulté apporte la facilité dans la jurisprudence islamique.",
+                   "example": "Raccourcir les prières pendant le voyage ou rompre le jeûne en cas de maladie."},
+            "fa": {"definition": "مشقت باعث آسانی می‌شود.",
+                   "example": "قصر نماز در سفر یا افطار در بیماری."},
+            "ms": {"definition": "Kesukaran membawa kemudahan dalam fiqh.",
+                   "example": "Memendekkan solat semasa musafir atau berbuka puasa ketika sakit."},
+            "ur": {"definition": "مشقت آسانی لاتی ہے۔",
+                   "example": "سفر میں نماز قصر کرنا یا بیماری میں روزہ افطار کرنا۔"}
         },
         "الضرر يزال": {
-            "definition": "كل ما فيه ضرر على الفرد أو الجماعة يجب رفعه أو منعه.",
-            "example": "منع الغش في البيع أو إزالة الأذى عن الطريق.",
+            "ar": {"definition": "كل ما فيه ضرر على الفرد أو الجماعة يجب رفعه أو منعه.",
+                   "example": "منع الغش في البيع أو إزالة الأذى عن الطريق."},
+            "en": {"definition": "Harm must be removed or prevented.",
+                   "example": "Preventing fraud in sales or removing harm from the road."},
+            "fr": {"definition": "Le préjudice doit être écarté ou empêché.",
+                   "example": "Prévenir la fraude dans les ventes ou éliminer les nuisances de la route."},
+            "fa": {"definition": "ضرر باید برطرف شود.",
+                   "example": "منع تقلب در خرید و فروش یا برداشتن مزاحمت از راه."},
+            "ms": {"definition": "Kemudaratan mesti dihilangkan atau dicegah.",
+                   "example": "Mencegah penipuan dalam jualan atau membuang bahaya dari jalan."},
+            "ur": {"definition": "نقصان کو دور کیا جانا چاہیے۔",
+                   "example": "بیع میں دھوکہ دہی کو روکنا یا راستے سے نقصان کو ہٹانا۔"}
         },
         "العادة محكمة": {
-            "definition": "العرف والعادة المعتبرة شرعًا تُعتبر في الأحكام ما لم تخالف نصًا شرعيًا.",
-            "example": "أعراف الزواج أو البيع.",
+            "ar": {"definition": "العرف والعادة المعتبرة شرعًا تُعتبر في الأحكام ما لم تخالف نصًا شرعيًا.",
+                   "example": "أعراف الزواج أو البيع."},
+            "en": {"definition": "Custom is a valid consideration in Islamic law.",
+                   "example": "Customs regarding marriage or sales."},
+            "fr": {"definition": "La coutume est considérée en droit islamique.",
+                   "example": "Les coutumes relatives au mariage ou aux ventes."},
+            "fa": {"definition": "عرف و عادت معتبر شرعی در احکام لحاظ می‌شود.",
+                   "example": "عرف‌های ازدواج یا خرید و فروش."},
+            "ms": {"definition": "Adat dipertimbangkan dalam hukum Islam.",
+                   "example": "Adat mengenai perkahwinan atau jualan."},
+            "ur": {"definition": "عادت کو اسلامی قانون میں معتبر سمجھا جاتا ہے۔",
+                   "example": "شادی یا بیع کے متعلق رسوم۔"}
         },
         "الأمور بمقاصدها": {
-            "definition": "الحكم على الأفعال يكون بحسب نية صاحبها ومقصده.",
-            "example": "التفريق بين الصدقة والهدية.",
+            "ar": {"definition": "الحكم على الأفعال يكون بحسب نية صاحبها ومقصده.",
+                   "example": "التفريق بين الصدقة والهدية."},
+            "en": {"definition": "Actions are judged by their intentions.",
+                   "example": "The distinction between charity and gift."},
+            "fr": {"definition": "Les actions sont jugées selon leurs intentions.",
+                   "example": "La distinction entre l'aumône et le cadeau."},
+            "fa": {"definition": "کارها بر اساس نیت‌ها ارزیابی می‌شوند.",
+                   "example": "تفاوت بین صدقه و هدیه."},
+            "ms": {"definition": "Tindakan dinilai berdasarkan niat.",
+                   "example": "Perbezaan antara sedekah dan hadiah."},
+            "ur": {"definition": "اعمال کا دارومدار نیتوں پر ہے۔",
+                   "example": "صدقہ اور ہدیہ میں فرق۔"}
         },
         "الضرورات تبيح المحظورات": {
-            "definition": "عند الضرورة يجوز ارتكاب المحظور بقدر الحاجة فقط.",
-            "example": "أكل الميتة عند الخوف من الهلاك.",
+            "ar": {"definition": "عند الضرورة يجوز ارتكاب المحظور بقدر الحاجة فقط.",
+                   "example": "أكل الميتة عند الخوف من الهلاك."},
+            "en": {"definition": "Necessities permit the forbidden to the extent of need.",
+                   "example": "Eating carrion when fearing death."},
+            "fr": {"definition": "Les nécessités permettent le prohibé dans la mesure du besoin.",
+                   "example": "Manger de la charogne par crainte de mourir."},
+            "fa": {"definition": "ضرورت‌ها حرام را به اندازه نیاز مجاز می‌کنند.",
+                   "example": "خوردن مردار در صورت ترس از مرگ."},
+            "ms": {"definition": "Keperluan membenarkan yang haram mengikut keperluan.",
+                   "example": "Memakan bangkai apabila takut mati."},
+            "ur": {"definition": "ضرورتیں ممنوعات کو ضرورت کے مطابق جائز کرتی ہیں۔",
+                   "example": "موت کے خوف سے مردار کھانا۔"}
+        },
+        "الوسائل لها أحكام المقاصد": {
+            "ar": {"definition": "ما كان وسيلة لشيء يأخذ حكم ذلك الشيء.",
+                   "example": "الكتابة في العقود لحفظ الحقوق."},
+            "en": {"definition": "The means take the ruling of their objectives.",
+                   "example": "Writing contracts to preserve rights."},
+            "fr": {"definition": "Les moyens prennent le jugement de leurs objectifs.",
+                   "example": "Écrire des contrats pour préserver les droits."},
+            "fa": {"definition": "وسایل حکم اهداف خود را دارند.",
+                   "example": "نوشتن قراردادها برای حفظ حقوق."},
+            "ms": {"definition": "Cara-cara mengambil hukum matlamatnya.",
+                   "example": "Menulis kontrak untuk memelihara hak."},
+            "ur": {"definition": "ذرائع اپنے مقاصد کا حکم رکھتے ہیں۔",
+                   "example": "حقوق کے تحفظ کے لیے معاہدے تحریر کرنا۔"}
+        },
+        "القياس": {
+            "ar": {"definition": "إلحاق فرع بأصل في الحكم لعلة جامعة بينهما.",
+                   "example": "قياس المخدرات على الخمر في التحريم لعلة الإسكار."},
+            "en": {"definition": "Extending a ruling from an original case to a new case due to shared reasoning.",
+                   "example": "Analogizing drugs to alcohol in prohibition due to the reasoning of intoxication."},
+            "fr": {"definition": "Extension d'une règle d'un cas original à un nouveau cas en raison d'un raisonnement partagé.",
+                   "example": "Analogie des drogues à l'alcool dans l'interdiction en raison de l'intoxication."},
+            "fa": {"definition": "الحاق فرع به اصل در حکم به دلیل علت مشترک.",
+                   "example": "قیاس مواد مخدر بر خمر در تحریم به دلیل اسکار."},
+            "ms": {"definition": "Memperluas hukum dari kes asal ke kes baru kerana persamaan sebab.",
+                   "example": "Menganalogikan dadah kepada arak dalam pengharaman kerana sebab memabukkan."},
+            "ur": {"definition": "حکم میں فرع کو اصل سے ملانا بوجہ مشترک علت۔",
+                   "example": "نشہ کی علت کی وجہ سے منشیات کو شراب پر قیاس کرنا۔"}
+        },
+        "المصالح المرسلة": {
+            "ar": {"definition": "اعتبار المصلحة التي لم يرد نص خاص بها ولم تُلغَ، إذا كانت تحقق منفعة عامة.",
+                   "example": "توثيق العقود بالكتابة."},
+            "en": {"definition": "Considering public interests not explicitly addressed in primary sources.",
+                   "example": "Documenting contracts in writing."},
+            "fr": {"definition": "Considération des intérêts publics non explicitement abordés dans les sources primaires.",
+                   "example": "Documenter les contrats par écrit."},
+            "fa": {"definition": "اعتبار مصلحتی که نص خاصی برای آن نیامده و لغو نشده است.",
+                   "example": "مستند کردن قراردادها به نوشته."},
+            "ms": {"definition": "Mempertimbangkan kepentingan awam yang tidak disebut secara khusus.",
+                   "example": "Mendokumentasikan kontrak secara bertulis."},
+            "ur": {"definition": "ان مفادات کا اعتبار جن کا کوئی خاص نص نہیں ہے۔",
+                   "example": "معاہدات کو تحریر میں دستاویز کرنا۔"}
+        },
+        "الخاص يحكم العام": {
+            "ar": {"definition": "إذا ورد نص عام ونص خاص، يُقدَّم الخاص في التطبيق.",
+                   "example": "قوله تعالى: (وأحل الله البيع) عام، وقوله: (حرمت عليكم الميتة) خاص."},
+            "en": {"definition": "When general and specific texts conflict, the specific takes precedence.",
+                   "example": "The general verse: 'Allah has permitted trade' vs. 'Forbidden to you is carrion'."},
+            "fr": {"definition": "Lorsque les textes généraux et spécifiques sont en conflit, le spécifique prévaut.",
+                   "example": "Le verset général 'Allah a permis le commerce' vs 'Il vous est interdit la charogne'."},
+            "fa": {"definition": "نص خاص بر عام مقدم می‌شود.",
+                   "example": "آیه عام 'خداوند خرید و فروش را حلال کرده' vs 'مردار بر شما حرام شده'."},
+            "ms": {"definition": "Teks khusus didahulukan daripada teks umum.",
+                   "example": "Ayat umum 'Allah menghalalkan jual beli' vs 'Diharamkan kepada kamu bangkai'."},
+            "ur": {"definition": "خاص کو عام پر ترجیح دی جاتی ہے۔",
+                   "example": "عام آیت 'اللہ نے بیع کو حلال کیا' vs 'تم پر مردار حرام ہے'۔"}
         },
         "لا ضرر ولا ضرار": {
-            "definition": "قاعدة مأخوذة من حديث النبي ﷺ: (لا ضرر ولا ضرار)، وتعني أنه لا يجوز إيقاع الضرر بالنفس أو بالغير، ولا يجوز رد الضرر بضرر مثله.",
-            "example": "منع البناء الذي يضر بالجار.",
-        },
+            "ar": {"definition": "قاعدة مأخوذة من حديث النبي ﷺ: (لا ضرر ولا ضرار)، وتعني أنه لا يجوز إيقاع الضرر بالنفس أو بالغير، ولا يجوز رد الضرر بضرر مثله.",
+                   "example": "منع البناء الذي يضر بالجار."},
+            "en": {"definition": "Based on the Prophetic hadith: 'No harm and no reciprocating harm.'",
+                   "example": "Preventing construction that harms a neighbor."},
+            "fr": {"definition": "Basé sur le hadith prophétique: 'Pas de mal et pas de réciprocité de mal.'",
+                   "example": "Prévenir la construction qui nuit à un voisin."},
+            "fa": {"definition": "بر اساس حدیث نبوی: 'نه ضرر و نه ضرر متقابل'.",
+                   "example": "جلوگیری از ساخت و سازی که به همسایه ضرر می‌زند."},
+            "ms": {"definition": "Berdasarkan hadis Nabi: 'Tidak boleh membahayakan dan tidak boleh membalas bahaya.'",
+                   "example": "Mencegah pembinaan yang merugikan jiran."},
+            "ur": {"definition": "نبوی حدیث پر مبنی: 'نہ نقصان اور نہ نقصان کا بدلہ'۔",
+                   "example": "ایسی تعمیر کو روکنا جو پڑوسی کو نقصان پہنچائے۔"}
+        }
     }
     
-    options = ["عرض جميع القواعد دفعة واحدة"] + list(rules.keys())
-    selected_rule = st.selectbox("🔎 اختر قاعدة لعرض شرحها", options, key="fiqh_rules")
-    
-    if selected_rule == "عرض جميع القواعد دفعة واحدة":
-        st.markdown("### 📖 جميع القواعد والأصول الفقهية")
-        for rule, data in rules.items():
-            with st.expander(f"📌 {rule}"):
-                st.markdown(f"**التعريف:** {data['definition']}")
-                st.markdown(f"**مثال:** {data['example']}")
-    else:
-        data = rules[selected_rule]
-        st.markdown(f"### 📌 {selected_rule}")
-        st.markdown(f"**التعريف:** {data['definition']}")
-        st.markdown(f"**مثال:** {data['example']}")
+    # عرض القواعد بنفس نمط الفقرات السابقة
+    with st.expander(T["rules_title"]):
+        for rule_name, rule_translations in rules_data.items():
+            # الحصول على الترجمة حسب اللغة المختارة، أو اللغة العربية كافتراضي
+            rule_content = rule_translations.get(lang, rule_translations.get("ar", {}))
+            
+            st.markdown(f"""
+            <div class="info-box">
+                <h4>📌 {rule_name}</h4>
+                <p><strong>{T['rules_definition']}:</strong> {rule_content.get('definition', '')}</p>
+                <p><strong>{T['rules_example']}:</strong> {rule_content.get('example', '')}</p>
+            </div>
+            """, unsafe_allow_html=True)
 
 # ============================================
 # Main Application
