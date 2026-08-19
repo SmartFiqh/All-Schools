@@ -84,15 +84,6 @@ class Issue:
         """Get ruling at specified detail level."""
         return self.rulings.get(level, self.rulings.get("full", ""))
 
-@dataclass
-class ReferenceChunk:
-    """Represents a chunk of reference text with embedding."""
-    id: int
-    source_title: str
-    madhab_tag: str
-    chunk_text: str
-    embedding: List[float]
-    added_at: str
 
 @dataclass
 class SearchResult:
@@ -269,18 +260,18 @@ class DatabaseManager:
             
             issues = []
             for row in rows:
-                kw = row['keywords_{lang}'.replace('{lang}', lang)].split(',') if row[3] else []
+                kw = row[f'keywords_{lang}'].split(',') if row[f'keywords_{lang}'] else []
                 issues.append(Issue(
-                    id=row[0],
-                    topic=row[1],
-                    title=row[2],
+                    id=row['id'],
+                    topic=row['topic'],
+                    title=row[f'title_{lang}'],
                     keywords=[k.strip() for k in kw if k.strip()],
                     rulings={
-                        "very_short": row[4],
-                        "short": row[5],
-                        "full": row[6]
+                        "very_short": row[f'ruling_vs_{lang}'],
+                        "short": row[f'ruling_s_{lang}'],
+                        "full": row[f'ruling_f_{lang}']
                     },
-                    rulings_by_madhab=json.loads(row[7]) if row[7] else {}
+                    rulings_by_madhab=json.loads(row[f'rulings_by_madhab_{lang}']) if row[f'rulings_by_madhab_{lang}'] else {}
                 ))
             return issues
     
@@ -766,7 +757,7 @@ LEVELS = {
 }
 
 # ============================================
-# UI Translations
+# UI Translations (abbreviated for space)
 # ============================================
 
 UI = {
@@ -1139,7 +1130,7 @@ GLOSSARY = [
                     "fr": "Ce que le Législateur a ordonné de façon décisive à tout individu responsable d'accomplir ; celui qui l'accomplit est récompensé, et celui qui l'abandonne est fautif.",
                     "fa": "آنچه شارع به‌طور قطعی بر هر مکلفی واجب کرده است؛ انجام‌دهنده پاداش می‌گیرد و ترک‌کننده گناهکار است.",
                     "ms": "Apa yang Pembuat Syariat telah perintahkan secara tegas kepada setiap individu yang bertanggungjawab untuk melaksanakannya; yang melaksanakannya diberi pahala, dan yang meninggalkannya berdosa.",
-                    "ur": "وہ چیز جسے شارع نے ہر مکلف پر قطعی طور پر واجب کیا ہے؛ اسے کرنے والا ثواب پاتا ہے اور چھوڑنے والا گنہگار ہے。"}},
+                    "ur": "وہ چیز جسے شارع نے ہر مکلف پر قطعی طور پر واجب کیا ہے؛ اسے کرنے والا ثواب پاتا ہے اور چھوڑنے والا گنہگار ہے۔"}},
 ]
 
 IMAMS = [
