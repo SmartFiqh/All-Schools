@@ -1140,7 +1140,6 @@ COUNTRIES = [
 
 def display_fiqh_rules(lang: str, T: Dict) -> None:
     """Display fiqh rules and principles section with multilingual support."""
-    st.markdown("---")
     
     # تعريف القواعد مع ترجمات لكل اللغات
     rules_data = {
@@ -1300,20 +1299,21 @@ def display_fiqh_rules(lang: str, T: Dict) -> None:
         }
     }
     
-    # عرض القواعد بنفس نمط الفقرات السابقة
+    # عرض القواعد بنفس نمط الفقرات السابقة - كل شيء مخفي تحت العنوان الرئيسي
     with st.expander(T["rules_title"]):
+        # عرض كل قاعدة في قائمة منسدلة داخلية
         for rule_name, rule_translations in rules_data.items():
-            # الحصول على الترجمة حسب اللغة المختارة، أو اللغة العربية كافتراضي
+            # الحصول على الترجمة حسب اللغة المختارة
             rule_content = rule_translations.get(lang, rule_translations.get("ar", {}))
             
-            st.markdown(f"""
-            <div class="info-box">
-                <h4>📌 {rule_name}</h4>
-                <p><strong>{T['rules_definition']}:</strong> {rule_content.get('definition', '')}</p>
-                <p><strong>{T['rules_example']}:</strong> {rule_content.get('example', '')}</p>
-            </div>
-            """, unsafe_allow_html=True)
-
+            # استخدام expander داخلي لكل قاعدة
+            with st.expander(f"📌 {rule_name}"):
+                st.markdown(f"""
+                <div class="info-box">
+                    <p><strong>{T['rules_definition']}:</strong> {rule_content.get('definition', '')}</p>
+                    <p><strong>{T['rules_example']}:</strong> {rule_content.get('example', '')}</p>
+                </div>
+                """, unsafe_allow_html=True)
 # ============================================
 # Main Application
 # ============================================
