@@ -389,9 +389,7 @@ class AIService:
     
     def preprocess_question(self, question: str) -> str:
         """Clean and preprocess user question for better AI understanding."""
-        # Remove extra punctuation
         question = re.sub(r'[،؛؟!\.\,\;\?\!]', ' ', question)
-        # Normalize spaces
         question = re.sub(r'\s+', ' ', question).strip()
         return question
     
@@ -427,7 +425,6 @@ class AIService:
         if not self.available or not chunks:
             return None
         
-        # Preprocess question for better understanding
         clean_question = self.preprocess_question(question)
         
         context_block = "\n\n".join(
@@ -492,7 +489,6 @@ class AIService:
         if not self.available or not madhab_codes:
             return None
         
-        # Preprocess question for better understanding
         clean_question = self.preprocess_question(question)
         
         madhab_list_str = ", ".join(f"{code} ({MADHHAB_NAMES[code][lang]})" for code in madhab_codes)
@@ -747,11 +743,383 @@ LEVELS = {
 }
 
 # ============================================
-# Enhanced GLOSSARY with more terms
+# UI Translations (FULL DICTIONARY)
+# ============================================
+
+UI = {
+    "ar": {
+        "app_title": "الجامع المختصر لآراء المذاهب",
+        "app_subtitle": "منصة لعرض ومقارنة آراء المذاهب الفقهية — للفهم والتبصر، وليست موقع إفتاء.",
+        "lang_label": "اللغة",
+        "s1_title": "١ — اختر المذهب",
+        "group_q": "مذاهب السنة، أم مذاهب الشيعة، أم المذهب الإباضي؟",
+        "multi_hint": "💡 يمكنك اختيار أكثر من مذهب لعرض إجاباتها جنباً إلى جنب للمقارنة.",
+        "sub_select": "اختر مذهباً واحداً أو أكثر:",
+        "s2_title": "٢ — اختر الموضوع",
+        "topic_q": "اختر الموضوع الفقهي",
+        "s3_title": "٣ — طريقة عرض الإجابة",
+        "level_q": "اختر مستوى التفصيل",
+        "s4_title": "٤ — اكتب سؤالك",
+        "question_placeholder": "مثال: ما حكم صلاة الجماعة؟",
+        "search_btn": "🔍 ابحث عن الإجابة",
+        "s5_title": "٥ — الإجابة",
+        "answer_placeholder": "ستظهر الإجابة هنا بعد كتابة السؤال والضغط على زر البحث.",
+        "no_question_warning": "الرجاء كتابة سؤالك أولاً في الفقرة الرابعة.",
+        "no_madhab_warning": "الرجاء اختيار مذهب واحد على الأقل.",
+        "no_results_warning": "🔍 لم نجد مسألة بهذا الوصف ضمن الموضوع المختار، وتعذّر توليد إجابة بالذكاء الاصطناعي. جرّب صياغة أخرى.",
+        "signature": "هذا والله أعلم",
+        "note_general": "رأي عام موحّد — لم يُفصّل بعد لكل مذهب",
+        "note_madhab": "رأي المذهب {}",
+        "ai_badge": "🤖 إجابة الذكاء الاصطناعي",
+        "ai_disclaimer": "⚠️ هذه إجابة ولّدها الذكاء الاصطناعي تلقائياً لعدم وجود هذه المسألة في قاعدة البيانات الموثقة. إنها ليست فتوى ولم تُراجع من عالم شرعي.",
+        "ai_generating": "🤖 جاري توليد إجابة بالذكاء الاصطناعي...",
+        "ai_unavailable": "ميزة الإجابة التلقائية بالذكاء الاصطناعي غير مفعّلة حالياً.",
+        "rag_badge": "📖 مبني على المراجع المرفوعة ({})",
+        "rag_expander": "📁 إدارة المراجع (RAG) — للمشرفين",
+        "rag_intro": "ارفع نصوص مراجع فقهية تملك حقوق استخدامها؛ سيُقسّمها النظام إلى مقاطع ويبحث فيها دلالياً.",
+        "rag_title_label": "عنوان المصدر",
+        "rag_madhab_label": "المذهب (اختياري)",
+        "rag_text_label": "الصق النص هنا، أو ارفع ملف .txt",
+        "rag_file_label": "أو ارفع ملف نصي (.txt)",
+        "rag_submit": "إضافة المرجع وفهرسته",
+        "rag_processing": "جاري تقسيم النص وحساب التمثيل الرقمي للمقاطع...",
+        "rag_success": "✅ أُضيف {} مقطعاً من «{}» إلى فهرس المراجع.",
+        "rag_empty_warning": "⚠️ الرجاء لصق نص أو رفع ملف قبل الإضافة.",
+        "rag_failed": "❌ تعذّر فهرسة المرجع (تحقق من مفتاح Gemini API).",
+        "rag_current_sources": "المصادر المفهرسة حالياً:",
+        "rag_no_sources": "لا توجد مراجع مفهرسة بعد.",
+        "expander_imams": "📜 الأئمة المؤسسون للمذاهب",
+        "expander_countries": "🗺️ الدول الإسلامية والمذهب الرسمي السائد",
+        "expander_glossary": "📚 مصطلحات فقهية رئيسية",
+        "rules_title": "📘 القواعد والأصول الفقهية الرئيسية",
+        "rules_definition": "التعريف",
+        "rules_example": "مثال",
+        "expander_comments": "💬 أضف تعليقك أو ملاحظتك",
+        "rating_label": "قيّم فائدة الإجابة:",
+        "comment_placeholder": "اكتب ملاحظتك هنا...",
+        "comment_submit": "إرسال التعليق",
+        "comment_success": "✅ تم إرسال تعليقك، شكراً لك.",
+        "comment_warning": "⚠️ الرجاء كتابة تعليق قبل الإرسال.",
+        "comments_title": "تعليقات هذه الجلسة:",
+        "comments_note": "ملاحظة: هذه التعليقات محفوظة لجلستك الحالية فقط.",
+        "birthplace": "مكان الميلاد",
+        "founding_place": "مكان تأسيس المذهب",
+        "scholars": "أشهر فقهاء المذهب",
+        "official_madhab": "المذهب الرسمي",
+        "population": "عدد السكان (تقريبي)",
+    },
+    "en": {
+        "app_title": "The Concise Compendium of Madhhab Opinions",
+        "app_subtitle": "A platform for presenting and comparing juristic (fiqh) opinions — for understanding, not for issuing formal rulings (fatwas).",
+        "lang_label": "Language",
+        "s1_title": "1 — Choose the Madhhab",
+        "group_q": "Sunni schools, Shia schools, or the Ibadi school?",
+        "multi_hint": "💡 You can select more than one school to compare their answers side by side.",
+        "sub_select": "Choose one or more schools:",
+        "s2_title": "2 — Choose the Topic",
+        "topic_q": "Choose a fiqh topic",
+        "s3_title": "3 — Answer Detail Level",
+        "level_q": "Choose the level of detail",
+        "s4_title": "4 — Type Your Question",
+        "question_placeholder": "Example: What is the ruling on congregational prayer?",
+        "search_btn": "🔍 Search for the Ruling",
+        "s5_title": "5 — The Answer",
+        "answer_placeholder": "The answer will appear here after you type a question and press search.",
+        "no_question_warning": "Please type your question first in section 4.",
+        "no_madhab_warning": "Please select at least one school.",
+        "no_results_warning": "🔍 No matching issue was found, and an AI answer could not be generated.",
+        "signature": "And God knows best",
+        "note_general": "A general, unified opinion — not yet detailed per school",
+        "note_madhab": "Opinion of the {} school",
+        "ai_badge": "🤖 AI-generated answer",
+        "ai_disclaimer": "⚠️ This answer was generated automatically by AI because this issue isn't in the verified database yet.",
+        "ai_generating": "🤖 Generating an AI answer...",
+        "ai_unavailable": "Automatic AI answering is currently disabled.",
+        "rag_badge": "📖 Based on uploaded references ({})",
+        "rag_expander": "📁 Manage References (RAG) — Admins",
+        "rag_intro": "Upload fiqh reference texts you have rights to use; the system will chunk them and search semantically.",
+        "rag_title_label": "Source title",
+        "rag_madhab_label": "Madhhab (optional)",
+        "rag_text_label": "Paste the text here, or upload a .txt file",
+        "rag_file_label": "Or upload a text file (.txt)",
+        "rag_submit": "Add and Index Reference",
+        "rag_processing": "Chunking text and computing embeddings...",
+        "rag_success": "✅ Added {} chunks from \"{}\" to the reference index.",
+        "rag_empty_warning": "⚠️ Please paste text or upload a file before adding.",
+        "rag_failed": "❌ Failed to index the reference (check your Gemini API key).",
+        "rag_current_sources": "Currently indexed sources:",
+        "rag_no_sources": "No references indexed yet.",
+        "expander_imams": "📜 The Founding Imams of the Schools",
+        "expander_countries": "🗺️ Muslim-Majority Countries & Their Prevailing Official School",
+        "expander_glossary": "📚 Key Juristic Terms",
+        "rules_title": "📘 Key Jurisprudential Rules and Principles",
+        "rules_definition": "Definition",
+        "rules_example": "Example",
+        "expander_comments": "💬 Add Your Comment or Note",
+        "rating_label": "Rate how helpful this answer was:",
+        "comment_placeholder": "Write your note here...",
+        "comment_submit": "Submit Comment",
+        "comment_success": "✅ Your comment has been submitted, thank you.",
+        "comment_warning": "⚠️ Please write a comment before submitting.",
+        "comments_title": "Comments in this session:",
+        "comments_note": "Note: these comments are saved for your current session only.",
+        "birthplace": "Birthplace",
+        "founding_place": "Where the school was founded",
+        "scholars": "Prominent scholars of the school",
+        "official_madhab": "Official school",
+        "population": "Population (approx.)",
+    },
+    "fr": {
+        "app_title": "Le Recueil Concis des Avis des Écoles Juridiques",
+        "app_subtitle": "Une plateforme pour présenter et comparer les avis juridiques (fiqh) — pour la compréhension, non pour émettre des fatwas.",
+        "lang_label": "Langue",
+        "s1_title": "1 — Choisir l'école juridique",
+        "group_q": "Écoles sunnites, écoles chiites, ou école ibadite ?",
+        "multi_hint": "💡 Vous pouvez sélectionner plusieurs écoles pour comparer leurs réponses côte à côte.",
+        "sub_select": "Choisissez une ou plusieurs écoles :",
+        "s2_title": "2 — Choisir le sujet",
+        "topic_q": "Choisissez un sujet de fiqh",
+        "s3_title": "3 — Niveau de détail de la réponse",
+        "level_q": "Choisissez le niveau de détail",
+        "s4_title": "4 — Écrivez votre question",
+        "question_placeholder": "Exemple : Quel est le statut de la prière en congrégation ?",
+        "search_btn": "🔍 Rechercher la réponse",
+        "s5_title": "5 — La réponse",
+        "answer_placeholder": "La réponse apparaîtra ici après avoir écrit une question et appuyé sur rechercher.",
+        "no_question_warning": "Veuillez d'abord écrire votre question à la section 4.",
+        "no_madhab_warning": "Veuillez sélectionner au moins une école.",
+        "no_results_warning": "🔍 Aucune question correspondante trouvée, et impossible de générer une réponse par IA. Essayez une autre formulation.",
+        "signature": "Et Dieu est plus savant",
+        "note_general": "Avis général unifié — pas encore détaillé par école",
+        "note_madhab": "Avis de l'école {}",
+        "ai_badge": "🤖 Réponse générée par l'IA",
+        "ai_disclaimer": "⚠️ Cette réponse a été générée automatiquement par l'IA car cette question ne figure pas encore dans la base de données vérifiée. Ce n'est pas une fatwa et elle n'a pas été révisée par un érudit.",
+        "ai_generating": "🤖 Génération d'une réponse par IA...",
+        "ai_unavailable": "La réponse automatique par IA est actuellement désactivée (aucune clé API Gemini configurée).",
+        "rag_badge": "📖 Basé sur les références téléversées ({})",
+        "rag_expander": "📁 Gérer les références (RAG) — Administrateurs",
+        "rag_intro": "Téléversez des textes de référence en fiqh dont vous avez les droits d'utilisation ; le système les découpera et les recherchera sémantiquement.",
+        "rag_title_label": "Titre de la source",
+        "rag_madhab_label": "Madhhab (optionnel)",
+        "rag_text_label": "Collez le texte ici, ou téléversez un fichier .txt",
+        "rag_file_label": "Ou téléversez un fichier texte (.txt)",
+        "rag_submit": "Ajouter et indexer la référence",
+        "rag_processing": "Découpage du texte et calcul des vecteurs...",
+        "rag_success": "✅ {} extraits de « {} » ajoutés à l'index des références.",
+        "rag_empty_warning": "⚠️ Veuillez coller du texte ou téléverser un fichier avant d'ajouter.",
+        "rag_failed": "❌ Échec de l'indexation de la référence (vérifiez votre clé API Gemini).",
+        "rag_current_sources": "Sources actuellement indexées :",
+        "rag_no_sources": "Aucune référence indexée pour le moment.",
+        "expander_imams": "📜 Les Imams Fondateurs des Écoles",
+        "expander_countries": "🗺️ Pays à Majorité Musulmane et Leur École Officielle Dominante",
+        "expander_glossary": "📚 Termes Juridiques Clés",
+        "rules_title": "📘 Règles et principes juridiques clés",
+        "rules_definition": "Définition",
+        "rules_example": "Exemple",
+        "expander_comments": "💬 Ajoutez Votre Commentaire ou Remarque",
+        "rating_label": "Évaluez l'utilité de cette réponse :",
+        "comment_placeholder": "Écrivez votre remarque ici...",
+        "comment_submit": "Envoyer le commentaire",
+        "comment_success": "✅ Votre commentaire a été envoyé, merci.",
+        "comment_warning": "⚠️ Veuillez écrire un commentaire avant d'envoyer.",
+        "comments_title": "Commentaires de cette session :",
+        "comments_note": "Remarque : ces commentaires ne sont conservés que pour votre session actuelle.",
+        "birthplace": "Lieu de naissance",
+        "founding_place": "Lieu de fondation de l'école",
+        "scholars": "Savants marquants de l'école",
+        "official_madhab": "École officielle",
+        "population": "Population (approx.)",
+    },
+    "fa": {
+        "app_title": "جامع مختصر آراء مذاهب",
+        "app_subtitle": "پلتفرمی برای نمایش و مقایسه آراء فقهی مذاهب — برای فهم و بصیرت، نه صدور فتوا.",
+        "lang_label": "زبان",
+        "s1_title": "۱ — انتخاب مذهب",
+        "group_q": "مذاهب اهل سنت، مذاهب شیعه، یا مذهب اباضی؟",
+        "multi_hint": "💡 می‌توانید بیش از یک مذهب را برای مقایسه پاسخ‌ها انتخاب کنید.",
+        "sub_select": "یک یا چند مذهب را انتخاب کنید:",
+        "s2_title": "۲ — انتخاب موضوع",
+        "topic_q": "موضوع فقهی را انتخاب کنید",
+        "s3_title": "۳ — سطح نمایش پاسخ",
+        "level_q": "سطح جزئیات را انتخاب کنید",
+        "s4_title": "۴ — سوال خود را بنویسید",
+        "question_placeholder": "مثال: حکم نماز جماعت چیست؟",
+        "search_btn": "🔍 جستجوی پاسخ",
+        "s5_title": "۵ — پاسخ",
+        "answer_placeholder": "پاسخ پس از نوشتن سوال و کلیک روی جستجو نمایش داده می‌شود.",
+        "no_question_warning": "لطفاً ابتدا سوال خود را در بخش ۴ بنویسید.",
+        "no_madhab_warning": "لطفاً حداقل یک مذهب را انتخاب کنید.",
+        "no_results_warning": "🔍 هیچ مسئله‌ای یافت نشد و تولید پاسخ با هوش مصنوعی ممکن نشد. عبارت دیگری را امتحان کنید.",
+        "signature": "والله اعلم",
+        "note_general": "نظر عمومی واحد — هنوز به‌تفکیک مذهب نیست",
+        "note_madhab": "نظر مذهب {}",
+        "ai_badge": "🤖 پاسخ تولیدشده توسط هوش مصنوعی",
+        "ai_disclaimer": "⚠️ این پاسخ به‌طور خودکار توسط هوش مصنوعی تولید شده زیرا این مسئله هنوز در پایگاه داده تأییدشده موجود نیست. این فتوا نیست و توسط یک عالم دینی بررسی نشده است.",
+        "ai_generating": "🤖 در حال تولید پاسخ با هوش مصنوعی...",
+        "ai_unavailable": "پاسخ خودکار با هوش مصنوعی در حال حاضر غیرفعال است (کلید Gemini API تنظیم نشده است).",
+        "rag_badge": "📖 بر اساس مراجع بارگذاری‌شده ({})",
+        "rag_expander": "📁 مدیریت مراجع (RAG) — مدیران",
+        "rag_intro": "متون مرجع فقهی که حق استفاده از آن‌ها را دارید بارگذاری کنید؛ سیستم آن‌ها را به بخش‌هایی تقسیم کرده و پیش از تولید آزاد هوش مصنوعی، در آن‌ها جستجوی معنایی می‌کند.",
+        "rag_title_label": "عنوان منبع",
+        "rag_madhab_label": "مذهب (اختیاری)",
+        "rag_text_label": "متن را اینجا جای‌گذاری کنید، یا فایل .txt بارگذاری کنید",
+        "rag_file_label": "یا یک فایل متنی (.txt) بارگذاری کنید",
+        "rag_submit": "افزودن و فهرست‌بندی منبع",
+        "rag_processing": "در حال تقسیم متن و محاسبه بردارها...",
+        "rag_success": "✅ {} بخش از «{}» به فهرست مراجع افزوده شد.",
+        "rag_empty_warning": "⚠️ لطفاً پیش از افزودن، متنی جای‌گذاری یا فایلی بارگذاری کنید.",
+        "rag_failed": "❌ فهرست‌بندی منبع ناموفق بود (کلید Gemini API را بررسی کنید).",
+        "rag_current_sources": "منابع فهرست‌شده فعلی:",
+        "rag_no_sources": "هنوز هیچ منبعی فهرست نشده است.",
+        "expander_imams": "📜 ائمه مؤسس مذاهب",
+        "expander_countries": "🗺️ کشورهای اسلامی و مذهب رسمی",
+        "expander_glossary": "📚 اصطلاحات کلیدی فقهی",
+        "rules_title": "📘 قواعد و اصول فقهی اصلی",
+        "rules_definition": "تعریف",
+        "rules_example": "مثال",
+        "expander_comments": "💬 نظر یا پیشنهاد خود را اضافه کنید",
+        "rating_label": "میزان مفید بودن پاسخ را ارزیابی کنید:",
+        "comment_placeholder": "نظر خود را اینجا بنویسید...",
+        "comment_submit": "ارسال نظر",
+        "comment_success": "✅ نظر شما با موفقیت ارسال شد، سپاسگزاریم.",
+        "comment_warning": "⚠️ لطفاً قبل از ارسال، نظر خود را بنویسید.",
+        "comments_title": "نظرات این جلسه:",
+        "comments_note": "توجه: این نظرات فقط برای جلسه فعلی ذخیره می‌شوند.",
+        "birthplace": "محل تولد",
+        "founding_place": "محل تأسیس مذهب",
+        "scholars": "مشهورترین فقهای مذهب",
+        "official_madhab": "مذهب رسمی",
+        "population": "جمعیت (تقریبی)",
+    },
+    "ms": {
+        "app_title": "Himpunan Ringkas Pendapat Mazhab",
+        "app_subtitle": "Platform untuk memaparkan dan membandingkan pendapat fiqh mazhab — untuk kefahaman dan wawasan, bukan laman fatwa.",
+        "lang_label": "Bahasa",
+        "s1_title": "1 — Pilih Mazhab",
+        "group_q": "Mazhab Sunni, Syiah, atau Ibadi?",
+        "multi_hint": "💡 Anda boleh memilih lebih daripada satu mazhab untuk membandingkan jawapan mereka.",
+        "sub_select": "Pilih satu atau lebih mazhab:",
+        "s2_title": "2 — Pilih Topik",
+        "topic_q": "Pilih topik fiqh",
+        "s3_title": "3 — Tahap Perincian Jawapan",
+        "level_q": "Pilih tahap perincian",
+        "s4_title": "4 — Taip Soalan Anda",
+        "question_placeholder": "Contoh: Apakah hukum solat berjemaah?",
+        "search_btn": "🔍 Cari Jawapan",
+        "s5_title": "5 — Jawapan",
+        "answer_placeholder": "Jawapan akan muncul di sini selepas anda menaip soalan dan menekan cari.",
+        "no_question_warning": "Sila taip soalan anda terlebih dahulu di bahagian 4.",
+        "no_madhab_warning": "Sila pilih sekurang-kurangnya satu mazhab.",
+        "no_results_warning": "🔍 Tiada isu sepadan ditemui, dan jawapan AI tidak dapat dijana. Cuba kata kunci lain.",
+        "signature": "Dan Allah lebih mengetahui",
+        "note_general": "Pendapat umum yang disatukan — belum diperincikan mengikut mazhab",
+        "note_madhab": "Pendapat mazhab {}",
+        "ai_badge": "🤖 Jawapan dijana oleh AI",
+        "ai_disclaimer": "⚠️ Jawapan ini dijana secara automatik oleh AI kerana isu ini belum terdapat dalam pangkalan data yang disahkan. Ia bukan fatwa dan belum disemak oleh ulama.",
+        "ai_generating": "🤖 Menjana jawapan AI...",
+        "ai_unavailable": "Jawapan automatik AI kini dinyahaktifkan (kunci API Gemini tidak ditetapkan).",
+        "rag_badge": "📖 Berdasarkan rujukan yang dimuat naik ({})",
+        "rag_expander": "📁 Urus Rujukan (RAG) — Pentadbir",
+        "rag_intro": "Muat naik teks rujukan fiqh yang anda mempunyai hak untuk digunakan; sistem akan memecahkannya kepada bahagian dan mencari secara semantik.",
+        "rag_title_label": "Tajuk sumber",
+        "rag_madhab_label": "Mazhab (pilihan)",
+        "rag_text_label": "Tampal teks di sini, atau muat naik fail .txt",
+        "rag_file_label": "Atau muat naik fail teks (.txt)",
+        "rag_submit": "Tambah dan Indeks Rujukan",
+        "rag_processing": "Memecahkan teks dan mengira vektor...",
+        "rag_success": "✅ {} bahagian daripada \"{}\" ditambah ke indeks rujukan.",
+        "rag_empty_warning": "⚠️ Sila tampal teks atau muat naik fail sebelum menambah.",
+        "rag_failed": "❌ Gagal mengindeks rujukan (semak kunci API Gemini anda).",
+        "rag_current_sources": "Sumber yang diindeks sekarang:",
+        "rag_no_sources": "Tiada rujukan diindeks lagi.",
+        "expander_imams": "📜 Imam Pengasas Mazhab",
+        "expander_countries": "🗺️ Negara Islam & Mazhab Rasmi",
+        "expander_glossary": "📚 Istilah Fiqh Utama",
+        "rules_title": "📘 Peraturan dan Prinsip Fiqh Utama",
+        "rules_definition": "Definisi",
+        "rules_example": "Contoh",
+        "expander_comments": "💬 Tambah Ulasan atau Nota Anda",
+        "rating_label": "Nilaikan kemanfaatan jawapan ini:",
+        "comment_placeholder": "Tulis ulasan anda di sini...",
+        "comment_submit": "Hantar Ulasan",
+        "comment_success": "✅ Ulasan anda telah dihantar, terima kasih.",
+        "comment_warning": "⚠️ Sila tulis ulasan sebelum menghantar.",
+        "comments_title": "Ulasan sesi ini:",
+        "comments_note": "Nota: ulasan ini hanya disimpan untuk sesi semasa anda.",
+        "birthplace": "Tempat lahir",
+        "founding_place": "Tempat penubuhan mazhab",
+        "scholars": "Ulama terkemuka mazhab",
+        "official_madhab": "Mazhab rasmi",
+        "population": "Penduduk (anggaran)",
+    },
+    "ur": {
+        "app_title": "مذاہب کی آراء کا مختصر مجموعہ",
+        "app_subtitle": "مذاہب فقہیہ کی آراء دکھانے اور موازنہ کرنے کا پلیٹ فارم — فہم و بصیرت کے لیے، فتویٰ جاری کرنے کے لیے نہیں۔",
+        "lang_label": "زبان",
+        "s1_title": "۱ — مذہب منتخب کریں",
+        "group_q": "اہل سنت کے مذاہب، اہل تشیع کے مذاہب، یا اباضی مذہب؟",
+        "multi_hint": "💡 آپ موازنہ کے لیے ایک سے زیادہ مذاہب منتخب کر سکتے ہیں۔",
+        "sub_select": "ایک یا زیادہ مذاہب منتخب کریں:",
+        "s2_title": "۲ — موضوع منتخب کریں",
+        "topic_q": "فقہی موضوع منتخب کریں",
+        "s3_title": "۳ — جواب کی تفصیل کی سطح",
+        "level_q": "تفصیل کی سطح منتخب کریں",
+        "s4_title": "۴ — اپنا سوال لکھیں",
+        "question_placeholder": "مثال: نماز باجماعت کا کیا حکم ہے؟",
+        "search_btn": "🔍 جواب تلاش کریں",
+        "s5_title": "۵ — جواب",
+        "answer_placeholder": "جواب یہاں ظاہر ہوگا جب آپ سوال لکھیں گے اور تلاش پر کلک کریں گے۔",
+        "no_question_warning": "براہ کرم پہلے حصہ ۴ میں اپنا سوال لکھیں۔",
+        "no_madhab_warning": "براہ کرم کم از کم ایک مذہب منتخب کریں۔",
+        "no_results_warning": "🔍 کوئی مسئلہ نہیں ملا، اور AI جواب بھی تیار نہیں ہو سکا۔ دوسرے الفاظ آزمائیں۔",
+        "signature": "واللہ اعلم",
+        "note_general": "متفقہ عمومی رائے — ابھی تک مذہب کے لحاظ سے تفصیل نہیں دی گئی",
+        "note_madhab": "مذہب {} کی رائے",
+        "ai_badge": "🤖 مصنوعی ذہانت سے تیار کردہ جواب",
+        "ai_disclaimer": "⚠️ یہ جواب خودکار طور پر AI نے تیار کیا ہے کیونکہ یہ مسئلہ ابھی تصدیق شدہ ڈیٹا بیس میں موجود نہیں۔ یہ فتویٰ نہیں ہے اور کسی عالم دین نے اس کا جائزہ نہیں لیا۔",
+        "ai_generating": "🤖 AI کے ذریعے جواب تیار کیا جا رہا ہے...",
+        "ai_unavailable": "خودکار AI جواب فی الحال غیر فعال ہے (Gemini API کلید مقرر نہیں کی گئی)۔",
+        "rag_badge": "📖 اپ لوڈ کردہ حوالہ جات پر مبنی ({})",
+        "rag_expander": "📁 حوالہ جات کا انتظام (RAG) — منتظمین",
+        "rag_intro": "فقہی حوالہ جات کے متن اپ لوڈ کریں جن کے استعمال کا حق آپ کے پاس ہے؛ نظام انہیں حصوں میں تقسیم کر کے آزاد AI جوابات سے پہلے ان میں معنوی تلاش کرے گا۔",
+        "rag_title_label": "ماخذ کا عنوان",
+        "rag_madhab_label": "مذہب (اختیاری)",
+        "rag_text_label": "متن یہاں پیسٹ کریں، یا .txt فائل اپ لوڈ کریں",
+        "rag_file_label": "یا ایک متنی فائل (.txt) اپ لوڈ کریں",
+        "rag_submit": "حوالہ شامل اور انڈیکس کریں",
+        "rag_processing": "متن تقسیم اور ویکٹر شمار کیے جا رہے ہیں...",
+        "rag_success": "✅ «{}» سے {} حصے حوالہ انڈیکس میں شامل کیے گئے۔",
+        "rag_empty_warning": "⚠️ شامل کرنے سے پہلے براہ کرم متن پیسٹ کریں یا فائل اپ لوڈ کریں۔",
+        "rag_failed": "❌ حوالہ انڈیکس نہیں ہو سکا (اپنی Gemini API کلید چیک کریں)۔",
+        "rag_current_sources": "فی الحال انڈیکس شدہ ماخذ:",
+        "rag_no_sources": "ابھی تک کوئی حوالہ انڈیکس نہیں ہوا۔",
+        "expander_imams": "📜 مذاہب کے بانی ائمہ",
+        "expander_countries": "🗺️ اسلامی ممالک اور سرکاری مذہب",
+        "expander_glossary": "📚 اہم فقہی اصطلاحات",
+        "rules_title": "📘 اہم فقہی اصول و قواعد",
+        "rules_definition": "تعریف",
+        "rules_example": "مثال",
+        "expander_comments": "💬 اپنا تبصرہ یا نوٹ شامل کریں",
+        "rating_label": "اس جواب کی افادیت کی درجہ بندی کریں:",
+        "comment_placeholder": "اپنا تبصرہ یہاں لکھیں...",
+        "comment_submit": "تبصرہ جمع کریں",
+        "comment_success": "✅ آپ کا تبصرہ موصول ہوگیا، شکریہ۔",
+        "comment_warning": "⚠️ براہ کرم جمع کرنے سے پہلے تبصرہ لکھیں۔",
+        "comments_title": "اس سیشن کے تبصرے:",
+        "comments_note": "نوٹ: یہ تبصرے صرف آپ کے موجودہ سیشن کے لیے محفوظ ہیں۔",
+        "birthplace": "جائے پیدائش",
+        "founding_place": "مذہب کے قیام کی جگہ",
+        "scholars": "مشہور فقہاء",
+        "official_madhab": "سرکاری مذہب",
+        "population": "آبادی (تقریباً)",
+    },
+}
+
+# ============================================
+# Additional Data (Enhanced)
 # ============================================
 
 GLOSSARY = [
-    # فرض / فرض العين
     {"term": {"ar": "الفرض / فرض العين", "en": "Fard / Fard Ayn (Individual Obligation)", 
               "fr": "Le fard / fard ayn (Obligation individuelle)", "fa": "فرض / فرض عین", 
               "ms": "Fardu / Fardu Ain (Kewajipan Individu)", "ur": "فرض / فرض عین"},
@@ -761,8 +1129,6 @@ GLOSSARY = [
                     "fa": "آنچه شارع به‌طور قطعی بر هر مکلفی واجب کرده است؛ انجام‌دهنده پاداش می‌گیرد و ترک‌کننده گناهکار است.",
                     "ms": "Apa yang Pembuat Syariat telah perintahkan secara tegas kepada setiap individu yang bertanggungjawab untuk melaksanakannya; yang melaksanakannya diberi pahala, dan yang meninggalkannya berdosa.",
                     "ur": "وہ چیز جسے شارع نے ہر مکلف پر قطعی طور پر واجب کیا ہے؛ اسے کرنے والا ثواب پاتا ہے اور چھوڑنے والا گنہگار ہے۔"}},
-    
-    # فرض الكفاية
     {"term": {"ar": "فرض الكفاية", "en": "Fard Kifayah (Sufficiency Obligation)", 
               "fr": "Fard kifayah (Obligation de suffisance)", "fa": "فرض کفایه", 
               "ms": "Fardu Kifayah (Kewajipan Kecukupan)", "ur": "فرض کفایہ"},
@@ -772,8 +1138,6 @@ GLOSSARY = [
                     "fa": "تکلیف جمعی که اگر عده‌ای آن را انجام دهند، از دیگران ساقط می‌شود و اگر همه ترک کنند، همه گناهکارند.",
                     "ms": "Kewajipan kolektif yang jika dilakukan oleh sebahagian, gugur ke atas yang lain; jika ditinggalkan semua, semua berdosa.",
                     "ur": "ایک اجتماعی فریضہ جو اگر کچھ لوگ ادا کریں تو باقیوں سے ساقط ہو جاتا ہے، اور اگر سب چھوڑ دیں تو سب گنہگار ہیں۔"}},
-    
-    # الواجب
     {"term": {"ar": "الواجب", "en": "Wajib (Obligatory)", 
               "fr": "Wajib (Obligatoire)", "fa": "واجب", 
               "ms": "Wajib", "ur": "واجب"},
@@ -783,8 +1147,6 @@ GLOSSARY = [
                     "fa": "آنچه شارع به طور قطعی دستور داده اما به درجه فرض نمی‌رسد؛ انجام‌دهنده پاداش می‌گیرد و ترک‌کننده مجازات می‌شود (نزد حنفیه).",
                     "ms": "Apa yang Pembuat Syariat telah perintahkan secara tegas tetapi tidak mencapai tahap Fardu; diberi pahala jika dilakukan, dihukum jika ditinggalkan (menurut Hanafi; bagi majoriti, ia sinonim dengan Fardu).",
                     "ur": "وہ چیز جسے شارع نے قطعی طور پر حکم دیا ہے لیکن فرض کی سطح تک نہیں پہنچتی؛ کرنے والا ثواب پاتا ہے اور چھوڑنے والا سزا پاتا ہے (حنفیہ کے نزدیک؛ جمہور کے نزدیک یہ فرض کے مترادف ہے)۔"}},
-    
-    # المستحب / المندوب
     {"term": {"ar": "المستحب / المندوب", "en": "Mustahabb / Mandub (Recommended)", 
               "fr": "Mustahabb / Mandub (Recommandé)", "fa": "مستحب / مندوب", 
               "ms": "Mustahabb / Mandub (Digalakkan)", "ur": "مستحب / مندوب"},
@@ -794,8 +1156,6 @@ GLOSSARY = [
                     "fa": "آنچه شارع به طور غیر قطعی دستور داده؛ انجام‌دهنده پاداش می‌گیرد و ترک‌کننده مجازات نمی‌شود.",
                     "ms": "Apa yang Pembuat Syariat telah syorkan tanpa ketegasan; diberi pahala jika dilakukan, tidak dihukum jika ditinggalkan.",
                     "ur": "وہ چیز جسے شارع نے غیر قطعی طور پر پسند کیا ہے؛ کرنے والا ثواب پاتا ہے، چھوڑنے والا سزا نہیں پاتا۔"}},
-    
-    # السنة
     {"term": {"ar": "السنة", "en": "Sunnah (Prophetic Tradition)", 
               "fr": "Sunnah (Tradition prophétique)", "fa": "سنت", 
               "ms": "Sunnah", "ur": "سنت"},
@@ -805,8 +1165,6 @@ GLOSSARY = [
                     "fa": "آنچه از پیامبر ﷺ از قول، فعل یا تقریر ثابت شده است؛ شامل واجبات، مستحبات و مباحات می‌شود و اغلب برای مستحبات به کار می‌رود.",
                     "ms": "Apa yang ditetapkan daripada Nabi ﷺ daripada perkataan, perbuatan atau persetujuan; ia termasuk kewajipan, galakan dan harus, dan sering digunakan untuk amalan yang digalakkan.",
                     "ur": "وہ چیز جو نبی ﷺ سے قول، فعل یا تقریر کے طور پر ثابت ہے؛ اس میں واجبات، مستحبات اور مباحات شامل ہیں، اور اکثر مستحبات کے لیے استعمال ہوتی ہے۔"}},
-    
-    # السنة المؤكدة
     {"term": {"ar": "السنة المؤكدة", "en": "Sunnah Mu'akkadah (Emphasized Sunnah)", 
               "fr": "Sunnah mu'akkadah (Sunnah confirmée)", "fa": "سنت مؤکد", 
               "ms": "Sunnah Muakkadah (Sunnah yang ditekankan)", "ur": "سنت مؤکدہ"},
@@ -816,8 +1174,6 @@ GLOSSARY = [
                     "fa": "آنچه پیامبر ﷺ به طور مداوم انجام می‌داد و به ندرت ترک می‌کرد؛ از نظر اهمیت نزدیک به واجب است و ترک آن نزد برخی فقها مکروه است.",
                     "ms": "Apa yang Nabi ﷺ lakukan secara konsisten dan jarang ditinggalkan; ia hampir kepada kewajipan dari segi kepentingan, dan meninggalkannya adalah makruh bagi sesetengah ulama.",
                     "ur": "وہ چیز جو نبی ﷺ نے مستقل طور پر کی اور شاذ و نادر ہی چھوڑی؛ یہ اہمیت میں واجب کے قریب ہے، اور اسے چھوڑنا بعض فقہاء کے نزدیک مکروہ ہے۔"}},
-    
-    # المباح
     {"term": {"ar": "المباح", "en": "Mubah (Permissible)", 
               "fr": "Mubah (Permis)", "fa": "مباح", 
               "ms": "Mubah (Harus)", "ur": "مباح"},
@@ -827,8 +1183,6 @@ GLOSSARY = [
                     "fa": "آنچه شارع بین انجام و ترک آن مخیر کرده است؛ نه پاداشی بر انجام آن و نه عقابی بر ترک آن.",
                     "ms": "Apa yang Pembuat Syariat memberi pilihan antara melakukannya atau meninggalkannya; tiada pahala untuk melakukannya dan tiada hukuman untuk meninggalkannya.",
                     "ur": "وہ چیز جسے شارع نے اختیاری چھوڑ دیا ہے؛ کرنے پر کوئی ثواب نہیں اور چھوڑنے پر کوئی سزا نہیں۔"}},
-    
-    # الحرام
     {"term": {"ar": "الحرام", "en": "Haram (Prohibited)", 
               "fr": "Haram (Interdit)", "fa": "حرام", 
               "ms": "Haram (Terlarang)", "ur": "حرام"},
@@ -838,8 +1192,6 @@ GLOSSARY = [
                     "fa": "آنچه شارع به طور قطعی از آن نهی کرده است؛ انجام‌دهنده مجازات می‌شود و ترک‌کننده به دلیل اطاعت پاداش می‌گیرد.",
                     "ms": "Apa yang Pembuat Syariat telah melarang dengan tegas; yang melakukannya dihukum, dan yang meninggalkannya kerana kepatuhan diberi pahala.",
                     "ur": "وہ چیز جسے شارع نے قطعی طور پر منع کیا ہے؛ کرنے والا سزا پاتا ہے اور چھوڑنے والا اطاعت کی وجہ سے ثواب پاتا ہے۔"}},
-    
-    # المكروه
     {"term": {"ar": "المكروه", "en": "Makruh (Disliked)", 
               "fr": "Makruh (Détestable)", "fa": "مکروه", 
               "ms": "Makruh (Tidak digalakkan)", "ur": "مکروہ"},
@@ -849,8 +1201,6 @@ GLOSSARY = [
                     "fa": "آنچه شارع به طور غیر قطعی از آن نهی کرده است؛ ترک‌کننده پاداش می‌گیرد و انجام‌دهنده مجازات نمی‌شود.",
                     "ms": "Apa yang Pembuat Syariat telah tidak menggalakkan tanpa ketegasan; diberi pahala jika ditinggalkan, tidak dihukum jika dilakukan.",
                     "ur": "وہ چیز جسے شارع نے غیر قطعی طور پر ناپسند کیا ہے؛ چھوڑنے والا ثواب پاتا ہے، کرنے والا سزا نہیں پاتا۔"}},
-    
-    # الحلال
     {"term": {"ar": "الحلال", "en": "Halal (Lawful)", 
               "fr": "Halal (Licite)", "fa": "حلال", 
               "ms": "Halal", "ur": "حلال"},
@@ -862,9 +1212,34 @@ GLOSSARY = [
                     "ur": "وہ چیز جسے شارع نے حلال اور جائز کیا ہے؛ اس میں واجبات، مستحبات اور مباحات شامل ہیں، اور یہ حرام کے مقابل ہے۔"}},
 ]
 
-# ============================================
-# Enhanced COUNTRIES with more countries
-# ============================================
+IMAMS = [
+    {"name": {"ar": "الإمام مالك بن أنس الأصبحي", "en": "Imam Malik ibn Anas al-Asbahi", 
+              "fr": "L'imam Malik ibn Anas al-Asbahi", "fa": "امام مالک بن انس اصبحی", 
+              "ms": "Imam Malik bin Anas al-Asbahi", "ur": "امام مالک بن انس اصبحی"},
+     "school": MADHHAB_NAMES["maliki"], "lifespan": "93 - 179 AH",
+     "birthplace": {"ar": "المدينة المنورة", "en": "Medina", "fr": "Médine", "fa": "مدینه منوره", "ms": "Madinah", "ur": "مدینہ منورہ"},
+     "founding_place": {"ar": "المدينة المنورة", "en": "Medina", "fr": "Médine", "fa": "مدینه منوره", "ms": "Madinah", "ur": "مدینہ منورہ"},
+     "scholars": {"ar": "ابن القاسم، سحنون، ابن رشد، القرافي، خليل بن إسحاق",
+                  "en": "Ibn al-Qasim, Sahnun, Ibn Rushd, al-Qarafi, Khalil ibn Ishaq",
+                  "fr": "Ibn al-Qasim, Sahnun, Ibn Rushd, al-Qarafi, Khalil ibn Ishaq",
+                  "fa": "ابن قاسم، سحنون، ابن رشد، قرافی، خلیل بن اسحاق",
+                  "ms": "Ibn al-Qasim, Sahnun, Ibn Rushd, al-Qarafi, Khalil bin Ishaq",
+                  "ur": "ابن قاسم، سحنون، ابن رشد، قرافی، خلیل بن اسحاق"}},
+    {"name": {"ar": "الإمام محمد بن إدريس الشافعي", "en": "Imam Muhammad ibn Idris al-Shafi'i", 
+              "fr": "L'imam Muhammad ibn Idris al-Chafi'i", "fa": "امام محمد بن ادریس شافعی", 
+              "ms": "Imam Muhammad bin Idris al-Syafie", "ur": "امام محمد بن ادریس شافعی"},
+     "school": MADHHAB_NAMES["shafii"], "lifespan": "150 - 204 AH",
+     "birthplace": {"ar": "غزة", "en": "Gaza", "fr": "Gaza", "fa": "غزه", "ms": "Gaza", "ur": "غزہ"},
+     "founding_place": {"ar": "بغداد ثم مصر (المذهب الجديد)", "en": "Baghdad, then Egypt (the new doctrine)", 
+                        "fr": "Bagdad, puis l'Égypte (la nouvelle doctrine)", "fa": "بغداد سپس مصر (مذهب جدید)", 
+                        "ms": "Baghdad, kemudian Mesir (mazhab baru)", "ur": "بغداد پھر مصر (نیا مذہب)"},
+     "scholars": {"ar": "المزني، البويطي، النووي، ابن حجر الهيتمي، الرافعي",
+                  "en": "al-Muzani, al-Buwayti, al-Nawawi, Ibn Hajar al-Haytami, al-Rafi'i",
+                  "fr": "al-Muzani, al-Buwayti, al-Nawawi, Ibn Hajar al-Haytami, al-Rafi'i",
+                  "fa": "مزنی، بویطی، نووی، ابن حجر هیتمی، رافعی",
+                  "ms": "al-Muzani, al-Buwayti, al-Nawawi, Ibn Hajar al-Haytami, al-Rafi'i",
+                  "ur": "مزنی، بویطی، نووی، ابن حجر ہیتمی، رافعی"}},
+]
 
 COUNTRIES = [
     {"flag": "🇸🇦", "name": {"ar": "السعودية", "en": "Saudi Arabia", "fr": "Arabie saoudite", "fa": "عربستان سعودی", "ms": "Arab Saudi", "ur": "سعودی عرب"}, "madhab": "hanbali", "population": "36.4M"},
@@ -898,15 +1273,13 @@ COUNTRIES = [
 ]
 
 # ============================================
-# Enhanced Fiqh Rules with more rules
+# Fiqh Rules Display Function (Enhanced)
 # ============================================
 
 def display_fiqh_rules(lang: str, T: Dict) -> None:
     """Display fiqh rules and principles section with multilingual support."""
     
-    # تعريف القواعد مع ترجمات لكل اللغات - مجموعة موسعة
     rules_data = {
-        # القواعد الأساسية
         "اليقين لا يزول بالشك": {
             "ar": {"definition": "إذا ثبت أمر بيقين فلا يزول إلا بيقين مثله، ولا يؤثر فيه مجرد الشك.",
                    "example": "من تيقن الطهارة وشك في الحدث، يبقى على الطهارة."},
@@ -1061,7 +1434,7 @@ def display_fiqh_rules(lang: str, T: Dict) -> None:
             "ur": {"definition": "نبوی حدیث پر مبنی: 'نہ نقصان اور نہ نقصان کا بدلہ'۔",
                    "example": "ایسی تعمیر کو روکنا جو پڑوسی کو نقصان پہنچائے۔"}
         },
-        # قواعد جديدة مضافة
+        # New rules added
         "الإجماع": {
             "ar": {"definition": "اتفاق علماء الأمة في عصر من العصور على حكم شرعي، ويُعتبر من أقوى الأدلة بعد القرآن والسنة.",
                    "example": "إجماع الصحابة على حرمة الخمر."},
@@ -1069,7 +1442,7 @@ def display_fiqh_rules(lang: str, T: Dict) -> None:
                    "example": "The consensus of the Companions on the prohibition of wine."},
             "fr": {"definition": "Consensus des savants de la communauté musulmane à une époque donnée sur une règle juridique ; considéré comme l'une des preuves les plus fortes après le Coran et la Sunna.",
                    "example": "Le consensus des Compagnons sur l'interdiction du vin."},
-            "fa": {"definition": "اتفاق علماي امت در عصري از اعصار بر حكم شرعي، و از قوي‌ترين ادله بعد از قرآن و سنت محسوب می‌شود.",
+            "fa": {"definition": "اتفاق علماي امت در عصري از اعصار بر حكم شرعي، و از قوي‌ترین ادله بعد از قرآن و سنت محسوب می‌شود.",
                    "example": "اجماع صحابه بر حرمت خمر."},
             "ms": {"definition": "Persetujuan ulama umat Islam dalam sesuatu zaman terhadap hukum syarak; dianggap sebagai salah satu dalil terkuat selepas al-Quran dan Sunnah.",
                    "example": "Ijma' sahabat terhadap pengharaman arak."},
@@ -1106,12 +1479,9 @@ def display_fiqh_rules(lang: str, T: Dict) -> None:
         }
     }
     
-    # عرض القواعد بنفس نمط الفقرات السابقة - كل شيء مخفي تحت العنوان الرئيسي
-    # ملاحظة: تم استبدال الـ expander الداخلي بعناوين بارزة وصناديق معلومات لتفادي خطأ
-    # "Expanders may not be nested inside other expanders" في Streamlit.
+    # Display inside a single expander (no nesting)
     with st.expander(T["rules_title"]):
         for i, (rule_name, rule_translations) in enumerate(rules_data.items()):
-            # الحصول على الترجمة حسب اللغة المختارة
             rule_content = rule_translations.get(lang, rule_translations.get("ar", {}))
             
             if i > 0:
@@ -1124,12 +1494,6 @@ def display_fiqh_rules(lang: str, T: Dict) -> None:
                 <p><strong>{T['rules_example']}:</strong> {rule_content.get('example', '')}</p>
             </div>
             """, unsafe_allow_html=True)
-
-# ============================================
-# UI Translations (unchanged from original, kept for space)
-# ============================================
-
-# [محتوى UI كما هو موجود في الكود الأصلي - تم حذفه للاختصار]
 
 # ============================================
 # Main Application
@@ -1150,9 +1514,7 @@ def main():
     if "session_comments" not in st.session_state:
         st.session_state.session_comments = []
     
-    # ============================================
-    # IMPROVED LANGUAGE BAR & HEADER
-    # ============================================
+    # ========== IMPROVED LANGUAGE BAR & HEADER ==========
     
     lang = st.session_state.lang
     T = UI[lang]
@@ -1160,7 +1522,7 @@ def main():
     # Custom CSS for improved UI
     st.markdown("""
     <style>
-        /* Improved language bar */
+        /* Language bar */
         .lang-container {
             display: flex;
             justify-content: flex-end;
@@ -1172,33 +1534,13 @@ def main():
             margin-bottom: 20px;
             border: 1px solid #d4dcd4;
         }
-        .lang-container .lang-label {
+        .lang-label {
             font-weight: 600;
             color: #2a5c4a;
             font-size: 0.95rem;
             margin-right: 5px;
         }
-        .lang-container .stRadio > div {
-            display: flex;
-            gap: 8px;
-            flex-wrap: wrap;
-        }
-        .lang-container .stRadio label {
-            padding: 4px 12px;
-            border-radius: 20px;
-            background: #e8edea;
-            transition: all 0.2s;
-            font-size: 0.85rem;
-            cursor: pointer;
-        }
-        .lang-container .stRadio label[data-baseweb="radio"] {
-            background: transparent;
-        }
-        .lang-container .stRadio label[data-baseweb="radio"]:hover {
-            background: #d4e0da;
-        }
-        
-        /* Improved header */
+        /* Header */
         .app-header {
             text-align: center;
             padding: 30px 20px 25px;
@@ -1224,8 +1566,6 @@ def main():
             display: block;
             margin: 0 auto 5px auto;
         }
-        
-        /* Info box */
         .info-box {
             background: #f8f9fa;
             border-radius: 10px;
@@ -1318,10 +1658,6 @@ def main():
     
     if not USE_GEMINI:
         st.caption(f"ℹ️ {T['ai_unavailable']}")
-    
-    # ============================================
-    # REST OF THE APPLICATION (unchanged)
-    # ============================================
     
     # Admin: CSV Import
     with st.expander("📥 استيراد مسائل من CSV (للمشرفين)", expanded=False):
@@ -1513,7 +1849,7 @@ def main():
             </div>
             """, unsafe_allow_html=True)
     
-    # Display Fiqh Rules with translation support (enhanced)
+    # Display Fiqh Rules (enhanced)
     display_fiqh_rules(lang, T)
     
     # Comments section
