@@ -1282,7 +1282,7 @@ def display_fiqh_rules(lang: str, T: Dict) -> None:
                    "example": "معاہدات کو تحریر میں دستاویز کرنا۔"}
         },
         "الخاص يحكم العام": {
-            "ar": {"definition": "إذا ورد نص عام ونص خاص، يُقدَّم الخاص في التطبيق.",
+            "ar": {"definition": "إذا ورد نص عام ونص خاص، يُقدَّم الخاص في التطبيق.",
                    "example": "قوله تعالى: (وأحل الله البيع) عام، وقوله: (حرمت عليكم الميتة) خاص."},
             "en": {"definition": "When general and specific texts conflict, the specific takes precedence.",
                    "example": "The general verse: 'Allah has permitted trade' vs. 'Forbidden to you is carrion'."},
@@ -1312,20 +1312,23 @@ def display_fiqh_rules(lang: str, T: Dict) -> None:
     }
     
     # عرض القواعد بنفس نمط الفقرات السابقة - كل شيء مخفي تحت العنوان الرئيسي
+    # ملاحظة: تم استبدال الـ expander الداخلي بعناصر Markdown لتفادي خطأ
+    # "Expanders may not be nested inside other expanders" في Streamlit.
     with st.expander(T["rules_title"]):
-        # عرض كل قاعدة في قائمة منسدلة داخلية
-        for rule_name, rule_translations in rules_data.items():
+        for i, (rule_name, rule_translations) in enumerate(rules_data.items()):
             # الحصول على الترجمة حسب اللغة المختارة
             rule_content = rule_translations.get(lang, rule_translations.get("ar", {}))
             
-            # استخدام expander داخلي لكل قاعدة
-            with st.expander(f"📌 {rule_name}"):
-                st.markdown(f"""
-                <div class="info-box">
-                    <p><strong>{T['rules_definition']}:</strong> {rule_content.get('definition', '')}</p>
-                    <p><strong>{T['rules_example']}:</strong> {rule_content.get('example', '')}</p>
-                </div>
-                """, unsafe_allow_html=True)
+            if i > 0:
+                st.markdown("---")
+            
+            st.markdown(f"**📌 {rule_name}**")
+            st.markdown(f"""
+            <div class="info-box">
+                <p><strong>{T['rules_definition']}:</strong> {rule_content.get('definition', '')}</p>
+                <p><strong>{T['rules_example']}:</strong> {rule_content.get('example', '')}</p>
+            </div>
+            """, unsafe_allow_html=True)
 
 # ============================================
 # Main Application
