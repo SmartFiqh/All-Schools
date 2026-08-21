@@ -65,6 +65,30 @@ DB_PATH = "fiqh.db"
 EMBED_MODEL = "models/text-embedding-004"
 
 # ============================================
+# Arabic Text Normalization (for better local matching)
+# ============================================
+
+_AR_DIACRITICS = re.compile(r'[\u0617-\u061A\u064B-\u0652\u0670\u06D6-\u06ED\u0640]')
+_AR_PUNCT = re.compile(r'[\u060C\u061B\u061F\u066A-\u066D،؛؟!.,:;"\'()\[\]{}؟]')
+
+def normalize_arabic(text: str) -> str:
+    """Normalize Arabic text for more forgiving search matching:
+    strips diacritics/tatweel, unifies alef/yeh/teh-marbuta forms,
+    collapses punctuation and extra whitespace."""
+    if not text:
+        return ""
+    t = text.strip()
+    t = _AR_DIACRITICS.sub('', t)
+    t = re.sub(r'[إأآٱ]', 'ا', t)
+    t = t.replace('ى', 'ي')
+    t = t.replace('ة', 'ه')
+    t = t.replace('ؤ', 'و')
+    t = t.replace('ئ', 'ي')
+    t = _AR_PUNCT.sub(' ', t)
+    t = re.sub(r'\s+', ' ', t).strip()
+    return t.lower()
+
+# ============================================
 # Data Classes for Type Safety
 # ============================================
 
@@ -387,26 +411,23 @@ class AIService:
             logger.error(f"Generation failed: {e}")
             return None
     
-    def preprocess_question(self, question: str) -> str:
-        """Clean and preprocess user question for better AI understanding."""
-        question = re.sub(r'[،؛؟!\.\,\;\?\!]', ' ', question)
-        question = re.sub(r'\s+', ' ', question).strip()
-        return question
-    
     def semantic_search(self, query: str, issues: List[Issue], lang: str) -> Optional[List[int]]:
         if not self.available or not issues:
             return None
         
         titles_with_ids = [f"{issue.id}: {issue.title}" for issue in issues]
         prompt = f"""
-        أنت مساعد فقهي. لديك قائمة بعناوين مسائل فقهية. سؤال المستخدم: "{query}".
+        أنت مساعد فقهي خبير في فهم أسئلة المستخدمين حتى لو كانت بصياغة عامية أو غير مباشرة أو تحتوي أخطاء إملائية
+        أو مرادفات لمصطلحات فقهية. لديك قائمة بعناوين مسائل فقهية. سؤال المستخدم: "{query}".
         
         قائمة العناوين (مع أرقامها):
         {chr(10).join(titles_with_ids)}
         
-        المطلوب: حدد ما يصل إلى 3 عناوين من القائمة هي الأقرب لسؤال المستخدم.
-        أخرج النتيجة على شكل قائمة بأرقام المسائل مفصولة بفواصل (مثال: 3, 7, 12).
-        إذا لم تجد أي تطابق، اكتب "لا يوجد".
+        المطلوب: افهم المقصود الحقيقي من السؤال (حتى لو استخدم المستخدم كلمات عامية أو غير فقهية أو وصف الموقف
+        بدل ذكر المصطلح الشرعي مباشرة)، ثم حدد ما يصل إلى 5 عناوين من القائمة هي الأقرب دلالياً لسؤاله، مرتبة من
+        الأقرب إلى الأبعد.
+        أخرج النتيجة على شكل قائمة بأرقام المسائل مفصولة بفواصل فقط (مثال: 3, 7, 12) بلا أي شرح إضافي.
+        إذا لم تجد أي تطابق ولو بعيداً، اكتب "لا يوجد".
         """
         
         response = self.generate(prompt)
@@ -414,18 +435,55 @@ class AIService:
             return None
         
         result = response.strip()
-        if result == "لا يوجد":
+        if "لا يوجد" in result:
             return []
         
         ids = re.findall(r'\d+', result)
-        return [int(id) for id in ids[:3]]
+        return [int(id) for id in ids[:5]]
+    
+    def understand_query(self, query: str, lang: str) -> Optional[Dict[str, Any]]:
+        """Use AI to better understand a user's question: rewrite it in clear
+        classical/formal phrasing and extract key fiqh search keywords, so that
+        indirect, colloquial, or loosely-worded questions still match the right
+        issue or generate an answer closer to what the user actually means."""
+        if not self.available or not query:
+            return None
+        
+        prompt = f"""
+        أنت مساعد بحثي فقهي. سؤال المستخدم قد يكون بصياغة عامية أو غير دقيقة أو يصف موقفاً بدل ذكر
+        المصطلح الفقهي مباشرة. سؤال المستخدم: "{query}"
+        
+        المطلوب:
+        1) أعد صياغة السؤال بلغة فصيحة واضحة ومباشرة تعبّر عن المقصود الفقهي الحقيقي منه.
+        2) استخرج 3 إلى 6 كلمات مفتاحية فقهية (مصطلحات شرعية) ذات صلة بالسؤال.
+        
+        أخرج النتيجة بصيغة JSON فقط بلا أي شرح إضافي، بهذا الشكل بالضبط:
+        {{"normalized_question": "...", "keywords": ["...", "..."]}}
+        """
+        
+        response = self.generate(prompt)
+        if not response:
+            return None
+        
+        try:
+            raw = response.strip()
+            json_start = raw.find("{")
+            json_end = raw.rfind("}") + 1
+            data = json.loads(raw[json_start:json_end])
+            if isinstance(data.get("keywords"), list):
+                return {
+                    "normalized_question": str(data.get("normalized_question", "")).strip(),
+                    "keywords": [str(k).strip() for k in data["keywords"] if str(k).strip()],
+                }
+            return None
+        except Exception as e:
+            logger.error(f"Query understanding parsing failed: {e}")
+            return None
     
     def rag_generate_answer(self, question: str, lang: str, madhab_codes: List[str], 
                            level: str, T: Dict, chunks: List[Dict]) -> Optional[List[Dict]]:
         if not self.available or not chunks:
             return None
-        
-        clean_question = self.preprocess_question(question)
         
         context_block = "\n\n".join(
             f"[{i+1}] (المصدر: {c['title']}) {c['chunk']}" 
@@ -433,22 +491,18 @@ class AIService:
         )
         madhab_list_str = ", ".join(f"{code} ({MADHHAB_NAMES[code][lang]})" for code in madhab_codes)
         level_hint = {
-            "very_short": "كلمة أو كلمتين فقط مع الإشارة إلى المصدر",
-            "short": "سطر واحد مختصر مع ذكر المصدر",
-            "full": "فقرة قصيرة من سطرين إلى أربعة أسطر مع ذكر المصدر والتفصيل",
+            "very_short": "كلمة أو كلمتين فقط",
+            "short": "سطر واحد مختصر",
+            "full": "فقرة قصيرة من سطرين إلى أربعة أسطر",
         }.get(level, "سطر واحد مختصر")
         
         prompt = f"""
-        أنت مساعد بحثي متخصص في الفقه الإسلامي المقارن. لديك مقاطع مسترجعة من مراجع فقهية فعلية رفعها المشرف (مذكورة أدناه مع أرقامها ومصادرها).
-        
-        **تعليمات هامة:**
-        1. اعتمد حصرياً على هذه المقاطع في إجابتك، ولا تضف معلومات من خارجها.
-        2. افهم سؤال المستخدم جيداً: "{clean_question}"
-        3. استخرج من المقاطع ما يتعلق بكل مذهب من المذاهب المطلوبة.
-        4. لخّص الرأي المستفاد من المقاطع حصراً، مع ذكر رقم المقطع المصدر.
+        أنت مساعد بحثي. لديك مقاطع مسترجعة من مراجع فقهية فعلية رفعها المشرف (مذكورة أدناه مع أرقامها ومصادرها). اعتمد حصرياً على هذه المقاطع في إجابتك، ولا تضف معلومات من خارجها.
         
         المقاطع المرجعية:
         {context_block}
+        
+        سؤال المستخدم: "{question}"
         
         المطلوب: لكل مذهب من المذاهب التالية: {madhab_list_str}
         - إن كانت المقاطع أعلاه تتضمن ما يخص هذا المذهب في هذه المسألة، لخّص رأيه المستفاد منها حصراً، بمستوى تفصيل: {level_hint}، مع الإشارة لرقم المقطع المصدر مثل [1].
@@ -489,38 +543,27 @@ class AIService:
         if not self.available or not madhab_codes:
             return None
         
-        clean_question = self.preprocess_question(question)
-        
         madhab_list_str = ", ".join(f"{code} ({MADHHAB_NAMES[code][lang]})" for code in madhab_codes)
         level_hint = {
             "very_short": "كلمة أو كلمتين فقط",
             "short": "سطر واحد مختصر",
-            "full": "فقرة قصيرة من سطرين إلى أربعة أسطر مع ذكر الأدلة إن وجدت",
+            "full": "فقرة قصيرة من سطرين إلى أربعة أسطر",
         }.get(level, "سطر واحد مختصر")
         
         prompt = f"""
-        أنت مساعد بحثي متخصص في الفقه الإسلامي المقارن. مهمتك هي فهم سؤال المستخدم بدقة والإجابة عليه بناءً على آراء المذاهب الفقهية الموثقة في كتب الفقه المعتمدة.
+        أنت مساعد بحثي متخصص في عرض آراء المذاهب الفقهية الإسلامية المعروفة والموثقة تاريخياً في كتب كل مذهب المعتمدة. أنت لا تُصدر فتوى شخصية، ولا تخترع رأياً غير موثق لمذهب معين.
         
-        **تعليمات هامة:**
-        1. اقرأ السؤال بعناية وافهم ما يسأل عنه المستخدم بالضبط: "{clean_question}"
-        2. إذا كان السؤال عاماً، حاول تحديد المسألة الفقهية الدقيقة التي يسأل عنها.
-        3. إذا كان السؤال عن حكم شرعي، اذكر رأي كل مذهب بوضوح مع ذكر الموجز.
-        4. إذا كان السؤال يقارن بين مذاهب، وضح أوجه الاتفاق والاختلاف.
-        5. إذا كان السؤال غير واضح، حاول تفسيره بأدب وقدم إجابة مفيدة.
-        6. لا تُصدر فتوى شخصية، ولا تخترع رأياً غير موثق لمذهب معين.
+        سؤال المستخدم: "{question}"
         
-        سؤال المستخدم: "{clean_question}"
-        
-        المطلوب: لكل مذهب من المذاهب التالية، اذكر رأيه الفقهي المعروف (إن وُجد رأي موثق) في هذه المسألة:
+        المطلوب: لكل مذهب من المذاهب التالية، اذكر رأيه الفقهي المعروف (إن وُجد رأي موثق) في هذه المسألة تحديداً:
         {madhab_list_str}
         
         مستوى التفصيل المطلوب لكل إجابة: {level_hint}
         اكتب نص كل إجابة بلغة رمزها ISO: "{lang}"
         
-        قاعدة صارمة: إن لم يكن هناك رأي معروف وموثق لمذهب معين في هذه المسألة تحديداً، اكتب صراحة أنه لا يوجد رأي موثق متاح في المصادر المتوفرة.
+        قاعدة صارمة: إن لم يكن هناك رأي معروف وموثق لمذهب معين في هذه المسألة تحديداً، اكتب صراحة أنه لا يوجد رأي موثق متاح.
         
-        أخرج النتيجة بصيغة JSON فقط، بهذا الشكل:
-        {{"maliki": "نص الإجابة", "shafii": "نص الإجابة", ...}}
+        أخرج النتيجة بصيغة JSON فقط، بهذا الشكل: {{"maliki": "نص الإجابة", "shafii": "نص الإجابة"}}
         """
         
         response = self.generate(prompt)
@@ -572,7 +615,19 @@ class SearchService:
         
         q = query.strip().lower()
         
-        semantic_ids = self.ai.semantic_search(q, all_issues, lang) if self.ai.available else None
+        # Use AI to better understand loosely-worded / colloquial / indirect
+        # questions: get a clarified restatement plus extra fiqh keywords to
+        # widen and sharpen the local matching, in addition to semantic search.
+        extra_keywords: List[str] = []
+        search_query_for_ai = q
+        if self.ai.available:
+            understanding = self.ai.understand_query(query, lang)
+            if understanding:
+                if understanding.get("normalized_question"):
+                    search_query_for_ai = understanding["normalized_question"]
+                extra_keywords = understanding.get("keywords", [])
+        
+        semantic_ids = self.ai.semantic_search(search_query_for_ai, all_issues, lang) if self.ai.available else None
         
         results = []
         if semantic_ids is not None:
@@ -582,19 +637,32 @@ class SearchService:
                     results.append(issue)
         
         if not results:
-            for issue in all_issues:
-                pool = (issue.title.lower() + " " +
-                       " ".join(issue.keywords).lower() + " " +
-                       issue.rulings["full"].lower())
-                if q in pool:
-                    results.append(issue)
+            # Normalized, scored local fallback: tolerant of diacritics,
+            # alef/teh-marbuta variants, and combines the raw query with any
+            # AI-extracted keywords for a wider net.
+            norm_q_terms = set(normalize_arabic(q).split())
+            for kw in extra_keywords:
+                norm_q_terms.update(normalize_arabic(kw).split())
+            norm_q_terms = {t for t in norm_q_terms if len(t) > 1}
             
-            if not results:
-                words = re.findall(r"\w+", q)
-                for issue in all_issues:
-                    pool = issue.title.lower() + " " + " ".join(issue.keywords).lower()
-                    if any(w in pool for w in words):
-                        results.append(issue)
+            scored = []
+            for issue in all_issues:
+                pool_raw = (issue.title + " " + " ".join(issue.keywords) + " " + issue.rulings["full"])
+                pool_norm = normalize_arabic(pool_raw)
+                
+                score = 0
+                norm_query_full = normalize_arabic(q)
+                if norm_query_full and norm_query_full in pool_norm:
+                    score += 5
+                for term in norm_q_terms:
+                    if term in pool_norm:
+                        score += 1
+                
+                if score > 0:
+                    scored.append((score, issue))
+            
+            scored.sort(key=lambda x: x[0], reverse=True)
+            results = [issue for _, issue in scored]
         
         final_results = []
         for issue in results:
@@ -702,6 +770,8 @@ class ReferenceManager:
 LANGS = {"العربية": "ar", "English": "en", "Français": "fr", 
          "فارسی": "fa", "Bahasa Melayu": "ms", "اردو": "ur"}
 
+LANG_FLAGS = {"ar": "🇸🇦", "en": "🇬🇧", "fr": "🇫🇷", "fa": "🇮🇷", "ms": "🇲🇾", "ur": "🇵🇰"}
+
 MADHHAB_NAMES = {
     "maliki": {"ar": "مالكي", "en": "Maliki", "fr": "Malikite", "fa": "مالکی", "ms": "Maliki", "ur": "مالکی"},
     "shafii": {"ar": "شافعي", "en": "Shafi'i", "fr": "Chaféite", "fa": "شافعی", "ms": "Syafie", "ur": "شافعی"},
@@ -743,7 +813,7 @@ LEVELS = {
 }
 
 # ============================================
-# UI Translations (FULL DICTIONARY)
+# UI Translations
 # ============================================
 
 UI = {
@@ -807,6 +877,9 @@ UI = {
         "scholars": "أشهر فقهاء المذهب",
         "official_madhab": "المذهب الرسمي",
         "population": "عدد السكان (تقريبي)",
+        "badge_madhabs": "مذاهب",
+        "badge_langs": "لغات",
+        "badge_countries": "دولة",
     },
     "en": {
         "app_title": "The Concise Compendium of Madhhab Opinions",
@@ -868,6 +941,9 @@ UI = {
         "scholars": "Prominent scholars of the school",
         "official_madhab": "Official school",
         "population": "Population (approx.)",
+        "badge_madhabs": "Schools",
+        "badge_langs": "Languages",
+        "badge_countries": "Countries",
     },
     "fr": {
         "app_title": "Le Recueil Concis des Avis des Écoles Juridiques",
@@ -929,6 +1005,9 @@ UI = {
         "scholars": "Savants marquants de l'école",
         "official_madhab": "École officielle",
         "population": "Population (approx.)",
+        "badge_madhabs": "Écoles",
+        "badge_langs": "Langues",
+        "badge_countries": "Pays",
     },
     "fa": {
         "app_title": "جامع مختصر آراء مذاهب",
@@ -990,6 +1069,9 @@ UI = {
         "scholars": "مشهورترین فقهای مذهب",
         "official_madhab": "مذهب رسمی",
         "population": "جمعیت (تقریبی)",
+        "badge_madhabs": "مذهب",
+        "badge_langs": "زبان",
+        "badge_countries": "کشور",
     },
     "ms": {
         "app_title": "Himpunan Ringkas Pendapat Mazhab",
@@ -1051,6 +1133,9 @@ UI = {
         "scholars": "Ulama terkemuka mazhab",
         "official_madhab": "Mazhab rasmi",
         "population": "Penduduk (anggaran)",
+        "badge_madhabs": "Mazhab",
+        "badge_langs": "Bahasa",
+        "badge_countries": "Negara",
     },
     "ur": {
         "app_title": "مذاہب کی آراء کا مختصر مجموعہ",
@@ -1112,104 +1197,160 @@ UI = {
         "scholars": "مشہور فقہاء",
         "official_madhab": "سرکاری مذہب",
         "population": "آبادی (تقریباً)",
+        "badge_madhabs": "مذاہب",
+        "badge_langs": "زبانیں",
+        "badge_countries": "ممالک",
     },
 }
 
 # ============================================
-# Additional Data (Enhanced)
+# Additional Data
 # ============================================
 
 GLOSSARY = [
-    {"term": {"ar": "الفرض / فرض العين", "en": "Fard / Fard Ayn (Individual Obligation)", 
-              "fr": "Le fard / fard ayn (Obligation individuelle)", "fa": "فرض / فرض عین", 
-              "ms": "Fardu / Fardu Ain (Kewajipan Individu)", "ur": "فرض / فرض عین"},
-     "definition": {"ar": "ما طلب الشارع فعله طلباً جازماً من كل مكلف بعينه، يُثاب فاعله ويُعاقب تاركه.",
-                    "en": "What the Lawgiver has decisively commanded every legally accountable individual to perform; one who does it is rewarded, and one who abandons it is sinful.",
-                    "fr": "Ce que le Législateur a ordonné de façon décisive à tout individu responsable d'accomplir ; celui qui l'accomplit est récompensé, et celui qui l'abandonne est fautif.",
-                    "fa": "آنچه شارع به‌طور قطعی بر هر مکلفی واجب کرده است؛ انجام‌دهنده پاداش می‌گیرد و ترک‌کننده گناهکار است.",
-                    "ms": "Apa yang Pembuat Syariat telah perintahkan secara tegas kepada setiap individu yang bertanggungjawab untuk melaksanakannya; yang melaksanakannya diberi pahala, dan yang meninggalkannya berdosa.",
-                    "ur": "وہ چیز جسے شارع نے ہر مکلف پر قطعی طور پر واجب کیا ہے؛ اسے کرنے والا ثواب پاتا ہے اور چھوڑنے والا گنہگار ہے۔"}},
-    {"term": {"ar": "فرض الكفاية", "en": "Fard Kifayah (Sufficiency Obligation)", 
-              "fr": "Fard kifayah (Obligation de suffisance)", "fa": "فرض کفایه", 
-              "ms": "Fardu Kifayah (Kewajipan Kecukupan)", "ur": "فرض کفایہ"},
-     "definition": {"ar": "ما طلب الشارع فعله طلباً جازماً من المجموعة دون كل فرد بعينه، فإذا قام به البعض سقط الإثم عن الباقين، وإن تركه الجميع أثموا.",
-                    "en": "A collective obligation which, if performed by some, absolves others; if abandoned by all, all are sinful.",
-                    "fr": "Une obligation collective qui, si elle est accomplie par certains, dispense les autres ; si tous l'abandonnent, tous sont fautifs.",
-                    "fa": "تکلیف جمعی که اگر عده‌ای آن را انجام دهند، از دیگران ساقط می‌شود و اگر همه ترک کنند، همه گناهکارند.",
-                    "ms": "Kewajipan kolektif yang jika dilakukan oleh sebahagian, gugur ke atas yang lain; jika ditinggalkan semua, semua berdosa.",
-                    "ur": "ایک اجتماعی فریضہ جو اگر کچھ لوگ ادا کریں تو باقیوں سے ساقط ہو جاتا ہے، اور اگر سب چھوڑ دیں تو سب گنہگار ہیں۔"}},
-    {"term": {"ar": "الواجب", "en": "Wajib (Obligatory)", 
-              "fr": "Wajib (Obligatoire)", "fa": "واجب", 
-              "ms": "Wajib", "ur": "واجب"},
-     "definition": {"ar": "ما طلب الشارع فعله طلباً جازماً غير أنه لا يصل إلى درجة الفرض، ويُثاب فاعله ويعاقب تاركه عند الحنفية، وعند الجمهور هو بمعنى الفرض.",
-                    "en": "What the Lawgiver has commanded decisively but not reaching the level of Fard; rewarded for doing, punished for abandoning (according to Hanafis; for the majority, it is synonymous with Fard).",
-                    "fr": "Ce que le Législateur a ordonné de façon décisive mais n'atteignant pas le niveau de Fard ; récompensé pour l'accomplissement, puni pour l'abandon (selon les Hanafites ; pour la majorité, c'est synonyme de Fard).",
-                    "fa": "آنچه شارع به طور قطعی دستور داده اما به درجه فرض نمی‌رسد؛ انجام‌دهنده پاداش می‌گیرد و ترک‌کننده مجازات می‌شود (نزد حنفیه).",
-                    "ms": "Apa yang Pembuat Syariat telah perintahkan secara tegas tetapi tidak mencapai tahap Fardu; diberi pahala jika dilakukan, dihukum jika ditinggalkan (menurut Hanafi; bagi majoriti, ia sinonim dengan Fardu).",
-                    "ur": "وہ چیز جسے شارع نے قطعی طور پر حکم دیا ہے لیکن فرض کی سطح تک نہیں پہنچتی؛ کرنے والا ثواب پاتا ہے اور چھوڑنے والا سزا پاتا ہے (حنفیہ کے نزدیک؛ جمہور کے نزدیک یہ فرض کے مترادف ہے)۔"}},
-    {"term": {"ar": "المستحب / المندوب", "en": "Mustahabb / Mandub (Recommended)", 
-              "fr": "Mustahabb / Mandub (Recommandé)", "fa": "مستحب / مندوب", 
-              "ms": "Mustahabb / Mandub (Digalakkan)", "ur": "مستحب / مندوب"},
-     "definition": {"ar": "ما طلب الشارع فعله طلباً غير جازم، يُثاب فاعله ولا يُعاقب تاركه.",
-                    "en": "What the Lawgiver has recommended without decisiveness; rewarded for doing, not punished for abandoning.",
-                    "fr": "Ce que le Législateur a recommandé sans caractère décisif ; récompensé pour l'accomplissement, non puni pour l'abandon.",
-                    "fa": "آنچه شارع به طور غیر قطعی دستور داده؛ انجام‌دهنده پاداش می‌گیرد و ترک‌کننده مجازات نمی‌شود.",
-                    "ms": "Apa yang Pembuat Syariat telah syorkan tanpa ketegasan; diberi pahala jika dilakukan, tidak dihukum jika ditinggalkan.",
-                    "ur": "وہ چیز جسے شارع نے غیر قطعی طور پر پسند کیا ہے؛ کرنے والا ثواب پاتا ہے، چھوڑنے والا سزا نہیں پاتا۔"}},
-    {"term": {"ar": "السنة", "en": "Sunnah (Prophetic Tradition)", 
-              "fr": "Sunnah (Tradition prophétique)", "fa": "سنت", 
-              "ms": "Sunnah", "ur": "سنت"},
-     "definition": {"ar": "ما ثبت عن النبي ﷺ من قول أو فعل أو تقرير، وهي تشمل الواجب والمستحب والمباح، وتُطلق غالباً على المستحب.",
-                    "en": "What is established from the Prophet ﷺ of sayings, actions, or approvals; it includes obligations, recommendations, and permissibles, and is often used for recommended acts.",
-                    "fr": "Ce qui est établi du Prophète ﷺ en paroles, actes ou approbations ; cela inclut les obligations, les recommandations et les permissibles, et est souvent utilisé pour les actes recommandés.",
-                    "fa": "آنچه از پیامبر ﷺ از قول، فعل یا تقریر ثابت شده است؛ شامل واجبات، مستحبات و مباحات می‌شود و اغلب برای مستحبات به کار می‌رود.",
-                    "ms": "Apa yang ditetapkan daripada Nabi ﷺ daripada perkataan, perbuatan atau persetujuan; ia termasuk kewajipan, galakan dan harus, dan sering digunakan untuk amalan yang digalakkan.",
-                    "ur": "وہ چیز جو نبی ﷺ سے قول، فعل یا تقریر کے طور پر ثابت ہے؛ اس میں واجبات، مستحبات اور مباحات شامل ہیں، اور اکثر مستحبات کے لیے استعمال ہوتی ہے۔"}},
-    {"term": {"ar": "السنة المؤكدة", "en": "Sunnah Mu'akkadah (Emphasized Sunnah)", 
-              "fr": "Sunnah mu'akkadah (Sunnah confirmée)", "fa": "سنت مؤکد", 
-              "ms": "Sunnah Muakkadah (Sunnah yang ditekankan)", "ur": "سنت مؤکدہ"},
-     "definition": {"ar": "ما واظب عليه النبي ﷺ من السنن ولم يتركها إلا نادراً، وهي قريبة من الواجب في الأهمية، وتركها مكروه عند بعض الفقهاء.",
-                    "en": "What the Prophet ﷺ consistently performed and rarely abandoned; it is close to obligatory in importance, and abandoning it is disliked by some jurists.",
-                    "fr": "Ce que le Prophète ﷺ a accompli régulièrement et rarement abandonné ; il est proche de l'obligation en importance, et son abandon est détesté par certains juristes.",
-                    "fa": "آنچه پیامبر ﷺ به طور مداوم انجام می‌داد و به ندرت ترک می‌کرد؛ از نظر اهمیت نزدیک به واجب است و ترک آن نزد برخی فقها مکروه است.",
-                    "ms": "Apa yang Nabi ﷺ lakukan secara konsisten dan jarang ditinggalkan; ia hampir kepada kewajipan dari segi kepentingan, dan meninggalkannya adalah makruh bagi sesetengah ulama.",
-                    "ur": "وہ چیز جو نبی ﷺ نے مستقل طور پر کی اور شاذ و نادر ہی چھوڑی؛ یہ اہمیت میں واجب کے قریب ہے، اور اسے چھوڑنا بعض فقہاء کے نزدیک مکروہ ہے۔"}},
-    {"term": {"ar": "المباح", "en": "Mubah (Permissible)", 
-              "fr": "Mubah (Permis)", "fa": "مباح", 
-              "ms": "Mubah (Harus)", "ur": "مباح"},
-     "definition": {"ar": "ما خير الشارع بين فعله وتركه، ولا ثواب على فعله ولا عقاب على تركه.",
-                    "en": "What the Lawgiver has left optional; no reward for doing it and no punishment for abandoning it.",
-                    "fr": "Ce que le Législateur a laissé facultatif ; pas de récompense pour l'accomplir ni de punition pour l'abandonner.",
-                    "fa": "آنچه شارع بین انجام و ترک آن مخیر کرده است؛ نه پاداشی بر انجام آن و نه عقابی بر ترک آن.",
-                    "ms": "Apa yang Pembuat Syariat memberi pilihan antara melakukannya atau meninggalkannya; tiada pahala untuk melakukannya dan tiada hukuman untuk meninggalkannya.",
-                    "ur": "وہ چیز جسے شارع نے اختیاری چھوڑ دیا ہے؛ کرنے پر کوئی ثواب نہیں اور چھوڑنے پر کوئی سزا نہیں۔"}},
-    {"term": {"ar": "الحرام", "en": "Haram (Prohibited)", 
-              "fr": "Haram (Interdit)", "fa": "حرام", 
-              "ms": "Haram (Terlarang)", "ur": "حرام"},
-     "definition": {"ar": "ما طلب الشارع تركه طلباً جازماً، يُعاقب فاعله ويُثاب تاركه امتثالاً.",
-                    "en": "What the Lawgiver has decisively forbidden; the doer is punished, and the one who abstains in obedience is rewarded.",
-                    "fr": "Ce que le Législateur a interdit de façon décisive ; celui qui le fait est puni, et celui qui s'en abstient par obéissance est récompensé.",
-                    "fa": "آنچه شارع به طور قطعی از آن نهی کرده است؛ انجام‌دهنده مجازات می‌شود و ترک‌کننده به دلیل اطاعت پاداش می‌گیرد.",
-                    "ms": "Apa yang Pembuat Syariat telah melarang dengan tegas; yang melakukannya dihukum, dan yang meninggalkannya kerana kepatuhan diberi pahala.",
-                    "ur": "وہ چیز جسے شارع نے قطعی طور پر منع کیا ہے؛ کرنے والا سزا پاتا ہے اور چھوڑنے والا اطاعت کی وجہ سے ثواب پاتا ہے۔"}},
-    {"term": {"ar": "المكروه", "en": "Makruh (Disliked)", 
-              "fr": "Makruh (Détestable)", "fa": "مکروه", 
-              "ms": "Makruh (Tidak digalakkan)", "ur": "مکروہ"},
-     "definition": {"ar": "ما طلب الشارع تركه طلباً غير جازم، يُثاب تاركه ولا يُعاقب فاعله.",
-                    "en": "What the Lawgiver has discouraged without decisiveness; rewarded for abandoning, not punished for doing.",
-                    "fr": "Ce que le Législateur a découragé sans caractère décisif ; récompensé pour l'abandon, non puni pour l'accomplissement.",
-                    "fa": "آنچه شارع به طور غیر قطعی از آن نهی کرده است؛ ترک‌کننده پاداش می‌گیرد و انجام‌دهنده مجازات نمی‌شود.",
-                    "ms": "Apa yang Pembuat Syariat telah tidak menggalakkan tanpa ketegasan; diberi pahala jika ditinggalkan, tidak dihukum jika dilakukan.",
-                    "ur": "وہ چیز جسے شارع نے غیر قطعی طور پر ناپسند کیا ہے؛ چھوڑنے والا ثواب پاتا ہے، کرنے والا سزا نہیں پاتا۔"}},
-    {"term": {"ar": "الحلال", "en": "Halal (Lawful)", 
-              "fr": "Halal (Licite)", "fa": "حلال", 
-              "ms": "Halal", "ur": "حلال"},
-     "definition": {"ar": "ما أحله الشارع وأباحه، وهو يشمل الواجب والمستحب والمباح، وهو مقابل للحرام.",
-                    "en": "What the Lawgiver has made lawful and permissible; it includes obligations, recommendations, and permissibles, and is the opposite of Haram.",
-                    "fr": "Ce que le Législateur a rendu licite et permis ; cela inclut les obligations, les recommandations et les permissibles, et est l'opposé de Haram.",
-                    "fa": "آنچه شارع حلال و مجاز کرده است؛ شامل واجبات، مستحبات و مباحات می‌شود و مقابل حرام است.",
-                    "ms": "Apa yang Pembuat Syariat telah halalkan dan benarkan; ia termasuk kewajipan, galakan dan harus, dan bertentangan dengan Haram.",
-                    "ur": "وہ چیز جسے شارع نے حلال اور جائز کیا ہے؛ اس میں واجبات، مستحبات اور مباحات شامل ہیں، اور یہ حرام کے مقابل ہے۔"}},
+    {"term": {"ar": "الحلال", "en": "Halal (Lawful)", "fr": "Halal (Licite)", "fa": "حلال", "ms": "Halal", "ur": "حلال"},
+     "definition": {"ar": "ما أذن الشارع بفعله أو استعماله، سواء كان مندوباً أو واجباً أو مباحاً؛ وهو ضد الحرام.",
+                    "en": "What the Lawgiver has permitted to be done or used, whether recommended, obligatory, or simply neutral; the opposite of haram.",
+                    "fr": "Ce que le Législateur a autorisé, qu'il s'agisse d'un acte recommandé, obligatoire ou simplement neutre ; le contraire du haram.",
+                    "fa": "آنچه شارع انجام یا استفاده آن را مجاز دانسته، خواه مستحب، واجب یا صرفاً مباح باشد؛ در برابر حرام.",
+                    "ms": "Apa yang dibenarkan oleh Pembuat Syariat, sama ada digalakkan, wajib, atau sekadar harus; lawan bagi haram.",
+                    "ur": "وہ چیز جسے شارع نے جائز قرار دیا، خواہ مستحب ہو، واجب ہو یا محض مباح؛ حرام کی ضد۔"},
+     "example": {"ar": "البيع المباح، الطعام الحلال.",
+                 "en": "A permissible sale; lawful food.",
+                 "fr": "Une vente licite ; une nourriture halal.",
+                 "fa": "خرید و فروش مباح، غذای حلال.",
+                 "ms": "Jualan yang harus, makanan halal.",
+                 "ur": "جائز بیع، حلال کھانا۔"}},
+    {"term": {"ar": "المباح", "en": "Mubah (Neutral / Permissible)", "fr": "Mubah (Indifférent)", "fa": "مباح", "ms": "Mubah", "ur": "مباح"},
+     "definition": {"ar": "فعل أو ترك استوى فيه الفعل والترك شرعاً، فلا ثواب في فعله ولا إثم في تركه.",
+                    "en": "An act that is neither commanded nor forbidden — doing it and leaving it are equal, with no reward or sin attached.",
+                    "fr": "Un acte ni commandé ni interdit — l'accomplir ou le délaisser sont équivalents, sans récompense ni péché.",
+                    "fa": "کاری که نه امر شده و نه نهی شده؛ انجام و ترک آن یکسان است و نه پاداشی دارد نه گناهی.",
+                    "ms": "Perbuatan yang tidak diperintah dan tidak dilarang — melakukan dan meninggalkannya adalah sama, tiada pahala atau dosa.",
+                    "ur": "وہ کام جس کا نہ حکم دیا گیا نہ منع کیا گیا؛ کرنا اور چھوڑنا برابر ہے، نہ ثواب نہ گناہ۔"},
+     "example": {"ar": "الأكل من الطيبات، اختيار لون الثوب.",
+                 "en": "Eating wholesome food; choosing the color of one's clothing.",
+                 "fr": "Manger des aliments licites ; choisir la couleur de son vêtement.",
+                 "fa": "خوردن غذاهای پاکیزه، انتخاب رنگ لباس.",
+                 "ms": "Makan makanan yang baik, memilih warna pakaian.",
+                 "ur": "پاکیزہ کھانا کھانا، لباس کا رنگ چننا۔"}},
+    {"term": {"ar": "الحرام", "en": "Haram (Forbidden)", "fr": "Haram (Interdit)", "fa": "حرام", "ms": "Haram", "ur": "حرام"},
+     "definition": {"ar": "ما طلب الشارع تركه طلباً جازماً؛ يُثاب تاركه امتثالاً ويُعاقب فاعله.",
+                    "en": "What the Lawgiver has decisively commanded to be avoided; leaving it is rewarded and committing it is sinful.",
+                    "fr": "Ce que le Législateur a interdit de façon décisive ; l'éviter est récompensé et le commettre est un péché.",
+                    "fa": "آنچه شارع قطعاً از ترک آن خواسته؛ ترک آن پاداش دارد و انجام آن گناه است.",
+                    "ms": "Apa yang dilarang secara tegas; meninggalkannya berpahala dan melakukannya berdosa.",
+                    "ur": "جسے شارع نے قطعی طور پر چھوڑنے کا حکم دیا؛ چھوڑنے پر ثواب اور کرنے پر گناہ ہے۔"},
+     "example": {"ar": "الربا، أكل لحم الخنزير.",
+                 "en": "Usury (riba); eating pork.",
+                 "fr": "L'usure (riba) ; consommer du porc.",
+                 "fa": "ربا، خوردن گوشت خوک.",
+                 "ms": "Riba, memakan daging babi.",
+                 "ur": "سود، خنزیر کا گوشت کھانا۔"}},
+    {"term": {"ar": "المكروه", "en": "Makruh (Disliked)", "fr": "Makruh (Réprouvé)", "fa": "مکروه", "ms": "Makruh", "ur": "مکروہ"},
+     "definition": {"ar": "ما طلب الشارع تركه طلباً غير جازم؛ يُثاب تاركه ولا يأثم فاعله.",
+                    "en": "What the Lawgiver has asked to be avoided, but not decisively; leaving it is rewarded, yet committing it is not sinful.",
+                    "fr": "Ce que le Législateur a demandé d'éviter, mais de façon non décisive ; l'éviter est récompensé, le commettre n'est pas un péché.",
+                    "fa": "آنچه شارع ترک آن را خواسته اما نه به‌طور قطعی؛ ترک آن پاداش دارد و انجام آن گناه ندارد.",
+                    "ms": "Apa yang diminta ditinggalkan tetapi tidak secara tegas; meninggalkannya berpahala, melakukannya tidak berdosa.",
+                    "ur": "جسے شارع نے چھوڑنے کو کہا مگر قطعی طور پر نہیں؛ چھوڑنے پر ثواب اور کرنے پر گناہ نہیں۔"},
+     "example": {"ar": "الأكل من ثوم نيء قبل الذهاب إلى المسجد، الإسراف في الماء عند الوضوء.",
+                 "en": "Eating raw garlic before going to the mosque; excessive use of water in ablution.",
+                 "fr": "Manger de l'ail cru avant d'aller à la mosquée ; le gaspillage d'eau lors des ablutions.",
+                 "fa": "خوردن سیر خام پیش از رفتن به مسجد، اسراف در آب وضو.",
+                 "ms": "Makan bawang putih mentah sebelum ke masjid, membazir air ketika wuduk.",
+                 "ur": "مسجد جانے سے پہلے کچا لہسن کھانا، وضو میں پانی کا اسراف۔"}},
+    {"term": {"ar": "الواجب", "en": "Wajib (Obligatory)", "fr": "Wajib (Obligatoire)", "fa": "واجب", "ms": "Wajib", "ur": "واجب"},
+     "definition": {"ar": "ما طلب الشارع فعله طلباً جازماً؛ يأثم تاركه ويثاب فاعله، ويرادف الفرض عند جمهور الفقهاء.",
+                    "en": "What the Lawgiver has decisively commanded to be done; leaving it is sinful and performing it is rewarded. Most jurists treat it as synonymous with Fard.",
+                    "fr": "Ce que le Législateur a ordonné de façon décisive ; l'omettre est un péché, l'accomplir est récompensé. Assimilé au Fard par la majorité des juristes.",
+                    "fa": "آنچه شارع قطعاً انجام آن را خواسته؛ ترک آن گناه و انجام آن پاداش دارد. نزد جمهور مرادف فرض است.",
+                    "ms": "Apa yang diperintah secara tegas untuk dilakukan; meninggalkannya berdosa, melakukannya berpahala. Disamakan dengan Fardu oleh majoriti ulama.",
+                    "ur": "جسے شارع نے قطعی طور پر کرنے کا حکم دیا؛ چھوڑنے پر گناہ اور کرنے پر ثواب ہے۔ جمہور کے نزدیک فرض کے مترادف۔"},
+     "example": {"ar": "الصلوات الخمس، الزكاة.",
+                 "en": "The five daily prayers; zakat.",
+                 "fr": "Les cinq prières quotidiennes ; la zakat.",
+                 "fa": "نمازهای پنج‌گانه، زکات.",
+                 "ms": "Solat lima waktu, zakat.",
+                 "ur": "پانچ وقت کی نمازیں، زکوٰۃ۔"}},
+    {"term": {"ar": "الفرض", "en": "Fard (Compulsory)", "fr": "Fard (Obligation certaine)", "fa": "فرض", "ms": "Fardu", "ur": "فرض"},
+     "definition": {"ar": "مرادف للواجب عند جمهور الفقهاء. أما عند الحنفية فهو ما ثبت بدليل قطعي الثبوت والدلالة كالقرآن والسنة المتواترة، وينكره كافر بخلاف الواجب الثابت بدليل ظني.",
+                    "en": "Synonymous with Wajib for most jurists. The Hanafis distinguish it as what is established by a definitive text (Qur'an or mass-transmitted Sunnah), so denying it amounts to disbelief, unlike Wajib which rests on a probable proof.",
+                    "fr": "Synonyme de Wajib pour la majorité des juristes. Les hanafites le distinguent comme ce qui repose sur une preuve définitive (Coran, Sunna mutawatir), dont le déni équivaut à la mécréance.",
+                    "fa": "نزد جمهور مرادف واجب است. نزد حنفیان: آنچه با دلیل قطعی (قرآن یا سنت متواتر) ثابت شده و انکار آن کفر است.",
+                    "ms": "Sinonim Wajib bagi majoriti ulama. Bagi Hanafi, ia dibezakan sebagai apa yang sabit dengan dalil qat'i (al-Quran atau Sunnah mutawatir).",
+                    "ur": "جمہور کے نزدیک واجب کے مترادف۔ احناف کے نزدیک وہ جو دلیل قطعی سے ثابت ہو (قرآن یا سنت متواترہ)، اس کا انکار کفر ہے۔"},
+     "example": {"ar": "فرضية الصلوات الخمس بالقرآن، فرضية الزكاة.",
+                 "en": "The obligation of the five prayers, established by the Qur'an.",
+                 "fr": "L'obligation des cinq prières, établie par le Coran.",
+                 "fa": "وجوب نمازهای پنج‌گانه با قرآن.",
+                 "ms": "Kewajipan solat lima waktu yang disabitkan al-Quran.",
+                 "ur": "قرآن سے ثابت پانچ نمازوں کی فرضیت۔"}},
+    {"term": {"ar": "فرض الكفاية", "en": "Fard Kifayah (Collective Obligation)", "fr": "Fard Kifaya (Obligation collective)", "fa": "فرض کفایه", "ms": "Fardu Kifayah", "ur": "فرض کفایہ"},
+     "definition": {"ar": "تكليف يسقط الإثم عن جميع المكلفين إذا قام به من يكفي منهم، ويأثم الجميع إذا تركه الكل.",
+                    "en": "A collective obligation — if enough people perform it, the sin is lifted from the rest; if all neglect it, all are sinful.",
+                    "fr": "Obligation collective — si un nombre suffisant l'accomplit, les autres en sont dispensés ; si tous la délaissent, tous sont en faute.",
+                    "fa": "تکلیفی که با انجام آن توسط برخی، از دیگران ساقط می‌شود؛ اگر همه ترک کنند همه گناهکارند.",
+                    "ms": "Kewajipan kolektif — jika sebahagian melaksanakannya, yang lain terlepas; jika semua meninggalkannya, semua berdosa.",
+                    "ur": "ایسا فرض جو بعض کے کرنے سے باقی سب سے ساقط ہو جائے؛ اگر سب چھوڑ دیں تو سب گنہگار ہوں۔"},
+     "example": {"ar": "صلاة الجنازة، تعلم الطب والصناعات الضرورية للأمة.",
+                 "en": "The funeral prayer; training enough doctors to meet the community's needs.",
+                 "fr": "La prière funéraire ; former suffisamment de médecins pour les besoins de la communauté.",
+                 "fa": "نماز جنازه، آموختن پزشکی به اندازه نیاز جامعه.",
+                 "ms": "Solat jenazah, mempelajari perubatan untuk memenuhi keperluan masyarakat.",
+                 "ur": "نماز جنازہ، معاشرے کی ضرورت پوری کرنے کے لیے طب کی تعلیم۔"}},
+    {"term": {"ar": "المستحب", "en": "Mustahabb (Recommended)", "fr": "Moustahabb (Recommandé)", "fa": "مستحب", "ms": "Mustahab", "ur": "مستحب"},
+     "definition": {"ar": "ما طلب الشارع فعله طلباً غير جازم؛ يثاب فاعله امتثالاً ولا يأثم تاركه، ويشمل عند كثير من الأصوليين السنة والمندوب والتطوع.",
+                    "en": "What the Lawgiver has encouraged, though not decisively; performing it is rewarded and leaving it carries no sin. It broadly covers Sunnah, Mandub, and voluntary acts.",
+                    "fr": "Ce que le Législateur a encouragé sans décision ferme ; l'accomplir est récompensé, le délaisser n'est pas un péché. Il englobe la Sunna, le Mandoub et les actes volontaires.",
+                    "fa": "آنچه شارع بدون الزام قطعی تشویق کرده؛ انجام آن پاداش دارد و ترک آن گناه ندارد. شامل سنت، مندوب و تطوع می‌شود.",
+                    "ms": "Apa yang digalakkan tanpa tuntutan tegas; melakukannya berpahala, meninggalkannya tidak berdosa. Merangkumi Sunnah, Mandub dan amalan sukarela.",
+                    "ur": "جسے شارع نے بغیر قطعی تاکید کے پسند فرمایا؛ کرنے پر ثواب، چھوڑنے پر گناہ نہیں۔ اس میں سنت، مندوب اور نفل شامل ہیں۔"},
+     "example": {"ar": "صلاة الوتر عند الجمهور، السواك.",
+                 "en": "The witr prayer for most jurists; using the miswak.",
+                 "fr": "La prière du witr pour la majorité ; l'usage du siwak.",
+                 "fa": "نماز وتر نزد جمهور، مسواک زدن.",
+                 "ms": "Solat witir menurut majoriti, bersiwak.",
+                 "ur": "جمہور کے نزدیک وتر، مسواک کرنا۔"}},
+    {"term": {"ar": "المندوب", "en": "Mandub (Encouraged)", "fr": "Mandoub (Encouragé)", "fa": "مندوب", "ms": "Mandub", "ur": "مندوب"},
+     "definition": {"ar": "عند بعض الأصوليين مرادف للمستحب، وعند آخرين هو ما لم يواظب عليه النبي ﷺ مواظبة السنن الراتبة، فهو دون السنة في التأكيد.",
+                    "en": "For some jurists synonymous with Mustahabb; for others, an act the Prophet ﷺ did not perform as consistently as the confirmed Sunnahs, so it ranks slightly below Sunnah.",
+                    "fr": "Pour certains juristes, synonyme de Moustahabb ; pour d'autres, un acte que le Prophète ﷺ n'a pas accompli aussi régulièrement que les Sunnas confirmées.",
+                    "fa": "نزد برخی مرادف مستحب؛ نزد برخی دیگر عملی که پیامبر ﷺ به اندازه سنت‌های مؤکد بر آن مداومت نکرده است.",
+                    "ms": "Bagi sesetengah ulama sinonim Mustahab; bagi yang lain, amalan yang tidak dilakukan Nabi ﷺ seistiqamah Sunnah muakkad.",
+                    "ur": "بعض کے نزدیک مستحب کا مترادف؛ بعض کے نزدیک وہ عمل جس پر نبی ﷺ نے سنن مؤکدہ جیسی مداومت نہیں فرمائی۔"},
+     "example": {"ar": "صلاة الضحى، صيام الاثنين والخميس.",
+                 "en": "The mid-morning (Duha) prayer; fasting on Mondays and Thursdays.",
+                 "fr": "La prière de Doha ; le jeûne du lundi et jeudi.",
+                 "fa": "نماز ضحی، روزه دوشنبه و پنجشنبه.",
+                 "ms": "Solat Dhuha, puasa Isnin dan Khamis.",
+                 "ur": "نماز چاشت، پیر اور جمعرات کا روزہ۔"}},
+    {"term": {"ar": "السنة", "en": "Sunnah", "fr": "Sunna", "fa": "سنت", "ms": "Sunat", "ur": "سنت"},
+     "definition": {"ar": "ما واظب النبي ﷺ على فعله دون إيجاب؛ يثاب فاعلها ولا يأثم تاركها، وتنقسم إلى سنة مؤكدة وسنة غير مؤكدة (زائدة).",
+                    "en": "What the Prophet ﷺ regularly did without making it obligatory; performing it is rewarded and leaving it is not sinful. It divides into emphasized and non-emphasized Sunnah.",
+                    "fr": "Ce que le Prophète ﷺ accomplissait régulièrement sans en faire une obligation ; récompensée si accomplie, non fautive si délaissée.",
+                    "fa": "آنچه پیامبر ﷺ بدون الزام بر آن مداومت داشته؛ انجام آن پاداش دارد و ترک آن گناه ندارد.",
+                    "ms": "Apa yang dilakukan Nabi ﷺ secara berterusan tanpa mewajibkannya; berpahala jika dilakukan, tidak berdosa jika ditinggalkan.",
+                    "ur": "جس پر نبی ﷺ نے بغیر وجوب کے مداومت فرمائی؛ کرنے پر ثواب، چھوڑنے پر گناہ نہیں۔"},
+     "example": {"ar": "السواك عند الوضوء، الأذكار بعد الصلاة.",
+                 "en": "Using the miswak during ablution; remembrance (adhkar) after prayer.",
+                 "fr": "Le siwak lors des ablutions ; les invocations après la prière.",
+                 "fa": "مسواک هنگام وضو، اذکار پس از نماز.",
+                 "ms": "Bersiwak ketika berwuduk, zikir selepas solat.",
+                 "ur": "وضو کے وقت مسواک، نماز کے بعد اذکار۔"}},
+    {"term": {"ar": "السنة المؤكدة", "en": "Emphasized Sunnah (Sunnah Mu'akkadah)", "fr": "Sunna confirmée (Mu'akkada)", "fa": "سنت مؤکد", "ms": "Sunat Muakkad", "ur": "سنت مؤکدہ"},
+     "definition": {"ar": "ما واظب عليه النبي ﷺ مواظبة تامة ولم يتركه إلا نادراً لبيان الجواز؛ تركها بلا عذر إساءة وتفريط، وإن لم يأثم صاحبها إثم تارك الواجب.",
+                    "en": "What the Prophet ﷺ maintained continuously, rarely leaving it and only to show it was not obligatory; abandoning it without excuse is blameworthy, though it does not carry the sin of abandoning a Wajib.",
+                    "fr": "Ce que le Prophète ﷺ a maintenu de façon quasi continue ; la délaisser sans excuse est blâmable, bien que ce ne soit pas le péché d'un Wajib délaissé.",
+                    "fa": "آنچه پیامبر ﷺ به‌طور کامل بر آن مداومت داشته و به‌ندرت ترک کرده؛ ترک بی‌عذر آن نکوهیده است، هرچند گناه ترک واجب را ندارد.",
+                    "ms": "Apa yang dilakukan Nabi ﷺ secara konsisten dan jarang ditinggalkan; meninggalkannya tanpa keuzuran adalah tercela, walaupun bukan berdosa seperti Wajib.",
+                    "ur": "جس پر نبی ﷺ نے مکمل مداومت فرمائی اور شاذ ہی چھوڑی؛ بلا عذر چھوڑنا ناپسندیدہ ہے، اگرچہ واجب چھوڑنے جیسا گناہ نہیں۔"},
+     "example": {"ar": "ركعتا الفجر، الوتر عند الجمهور (واجب عند الحنفية).",
+                 "en": "The two rak'ahs before Fajr; witr prayer (obligatory according to the Hanafis).",
+                 "fr": "Les deux rak'ahs avant Fajr ; le witr (obligatoire chez les hanafites).",
+                 "fa": "دو رکعت سنت فجر، وتر (نزد حنفیان واجب است).",
+                 "ms": "Dua rakaat sebelum Subuh, witir (wajib bagi Hanafi).",
+                 "ur": "فجر کی دو سنتیں، وتر (احناف کے نزدیک واجب)۔"}},
 ]
 
 IMAMS = [
@@ -1249,36 +1390,44 @@ COUNTRIES = [
     {"flag": "🇮🇷", "name": {"ar": "إيران", "en": "Iran", "fr": "Iran", "fa": "ایران", "ms": "Iran", "ur": "ایران"}, "madhab": "jafari", "population": "89.8M"},
     {"flag": "🇴🇲", "name": {"ar": "عُمان", "en": "Oman", "fr": "Oman", "fa": "عمان", "ms": "Oman", "ur": "عمان"}, "madhab": "ibadi", "population": "4.7M"},
     {"flag": "🇸🇩", "name": {"ar": "السودان", "en": "Sudan", "fr": "Soudan", "fa": "سودان", "ms": "Sudan", "ur": "سوڈان"}, "madhab": "maliki", "population": "48.1M"},
-    {"flag": "🇸🇾", "name": {"ar": "سوريا", "en": "Syria", "fr": "Syrie", "fa": "سوریه", "ms": "Syria", "ur": "شام"}, "madhab": "shafii", "population": "22.1M"},
-    {"flag": "🇮🇶", "name": {"ar": "العراق", "en": "Iraq", "fr": "Irak", "fa": "عراق", "ms": "Iraq", "ur": "عراق"}, "madhab": "jafari", "population": "45.5M"},
-    {"flag": "🇦🇪", "name": {"ar": "الإمارات", "en": "UAE", "fr": "EAU", "fa": "امارات", "ms": "UAE", "ur": "متحدہ عرب امارات"}, "madhab": "maliki", "population": "10.1M"},
-    {"flag": "🇯🇴", "name": {"ar": "الأردن", "en": "Jordan", "fr": "Jordanie", "fa": "اردن", "ms": "Jordan", "ur": "اردن"}, "madhab": "hanafi", "population": "11.1M"},
+    {"flag": "🇸🇾", "name": {"ar": "سوريا", "en": "Syria", "fr": "Syrie", "fa": "سوریه", "ms": "Syria", "ur": "شام"}, "madhab": "hanafi", "population": "23.2M"},
+    {"flag": "🇮🇶", "name": {"ar": "العراق", "en": "Iraq", "fr": "Irak", "fa": "عراق", "ms": "Iraq", "ur": "عراق"}, "madhab": "jafari", "population": "44.5M"},
+    {"flag": "🇦🇪", "name": {"ar": "الإمارات", "en": "United Arab Emirates", "fr": "Émirats arabes unis", "fa": "امارات متحده عربی", "ms": "Emiriah Arab Bersatu", "ur": "متحدہ عرب امارات"}, "madhab": "maliki", "population": "10.0M"},
+    {"flag": "🇯🇴", "name": {"ar": "الأردن", "en": "Jordan", "fr": "Jordanie", "fa": "اردن", "ms": "Jordan", "ur": "اردن"}, "madhab": "shafii", "population": "11.3M"},
     {"flag": "🇧🇭", "name": {"ar": "البحرين", "en": "Bahrain", "fr": "Bahreïn", "fa": "بحرین", "ms": "Bahrain", "ur": "بحرین"}, "madhab": "jafari", "population": "1.5M"},
-    {"flag": "🇰🇼", "name": {"ar": "الكويت", "en": "Kuwait", "fr": "Koweït", "fa": "کویت", "ms": "Kuwait", "ur": "کویت"}, "madhab": "hanafi", "population": "4.4M"},
-    {"flag": "🇹🇳", "name": {"ar": "تونس", "en": "Tunisia", "fr": "Tunisie", "fa": "تونس", "ms": "Tunisia", "ur": "تونس"}, "madhab": "maliki", "population": "12.5M"},
+    {"flag": "🇰🇼", "name": {"ar": "الكويت", "en": "Kuwait", "fr": "Koweït", "fa": "کویت", "ms": "Kuwait", "ur": "کویت"}, "madhab": "maliki", "population": "4.3M"},
+    {"flag": "🇹🇳", "name": {"ar": "تونس", "en": "Tunisia", "fr": "Tunisie", "fa": "تونس", "ms": "Tunisia", "ur": "تیونس"}, "madhab": "maliki", "population": "12.4M"},
     {"flag": "🇱🇾", "name": {"ar": "ليبيا", "en": "Libya", "fr": "Libye", "fa": "لیبی", "ms": "Libya", "ur": "لیبیا"}, "madhab": "maliki", "population": "7.0M"},
-    {"flag": "🇩🇿", "name": {"ar": "الجزائر", "en": "Algeria", "fr": "Algérie", "fa": "الجزایر", "ms": "Algeria", "ur": "الجزائر"}, "madhab": "maliki", "population": "46.1M"},
-    {"flag": "🇮🇩", "name": {"ar": "إندونيسيا", "en": "Indonesia", "fr": "Indonésie", "fa": "اندونزی", "ms": "Indonesia", "ur": "انڈونیشیا"}, "madhab": "shafii", "population": "279.1M"},
-    {"flag": "🇲🇾", "name": {"ar": "ماليزيا", "en": "Malaysia", "fr": "Malaisie", "fa": "مالزی", "ms": "Malaysia", "ur": "ملائیشیا"}, "madhab": "shafii", "population": "34.2M"},
-    {"flag": "🇵🇰", "name": {"ar": "باكستان", "en": "Pakistan", "fr": "Pakistan", "fa": "پاکستان", "ms": "Pakistan", "ur": "پاکستان"}, "madhab": "hanafi", "population": "240.0M"},
+    {"flag": "🇩🇿", "name": {"ar": "الجزائر", "en": "Algeria", "fr": "Algérie", "fa": "الجزایر", "ms": "Algeria", "ur": "الجزائر"}, "madhab": "maliki", "population": "45.4M"},
+    {"flag": "🇮🇩", "name": {"ar": "إندونيسيا", "en": "Indonesia", "fr": "Indonésie", "fa": "اندونزی", "ms": "Indonesia", "ur": "انڈونیشیا"}, "madhab": "shafii", "population": "277.5M"},
+    {"flag": "🇲🇾", "name": {"ar": "ماليزيا", "en": "Malaysia", "fr": "Malaisie", "fa": "مالزی", "ms": "Malaysia", "ur": "ملائیشیا"}, "madhab": "shafii", "population": "33.9M"},
+    {"flag": "🇵🇰", "name": {"ar": "باكستان", "en": "Pakistan", "fr": "Pakistan", "fa": "پاکستان", "ms": "Pakistan", "ur": "پاکستان"}, "madhab": "hanafi", "population": "240.5M"},
     {"flag": "🇦🇫", "name": {"ar": "أفغانستان", "en": "Afghanistan", "fr": "Afghanistan", "fa": "افغانستان", "ms": "Afghanistan", "ur": "افغانستان"}, "madhab": "hanafi", "population": "41.1M"},
-    {"flag": "🇱🇧", "name": {"ar": "لبنان", "en": "Lebanon", "fr": "Liban", "fa": "لبنان", "ms": "Lebanon", "ur": "لبنان"}, "madhab": "shafii", "population": "5.4M"},
-    {"flag": "🇵🇸", "name": {"ar": "فلسطين", "en": "Palestine", "fr": "Palestine", "fa": "فلسطین", "ms": "Palestine", "ur": "فلسطین"}, "madhab": "shafii", "population": "5.4M"},
+    {"flag": "🇱🇧", "name": {"ar": "لبنان", "en": "Lebanon", "fr": "Liban", "fa": "لبنان", "ms": "Lubnan", "ur": "لبنان"}, "madhab": "shafii", "population": "5.5M"},
+    {"flag": "🇵🇸", "name": {"ar": "فلسطين", "en": "Palestine", "fr": "Palestine", "fa": "فلسطین", "ms": "Palestin", "ur": "فلسطین"}, "madhab": "shafii", "population": "5.4M"},
     {"flag": "🇹🇩", "name": {"ar": "تشاد", "en": "Chad", "fr": "Tchad", "fa": "چاد", "ms": "Chad", "ur": "چاڈ"}, "madhab": "maliki", "population": "18.3M"},
-    {"flag": "🇳🇬", "name": {"ar": "نيجيريا", "en": "Nigeria", "fr": "Nigeria", "fa": "نیجریه", "ms": "Nigeria", "ur": "نائیجیریا"}, "madhab": "maliki", "population": "225.0M"},
-    {"flag": "🇸🇴", "name": {"ar": "الصومال", "en": "Somalia", "fr": "Somalie", "fa": "سومالی", "ms": "Somalia", "ur": "صومالیہ"}, "madhab": "shafii", "population": "17.1M"},
+    {"flag": "🇳🇬", "name": {"ar": "نيجيريا", "en": "Nigeria", "fr": "Nigeria", "fa": "نیجریه", "ms": "Nigeria", "ur": "نائیجیریا"}, "madhab": "maliki", "population": "223.8M"},
+    {"flag": "🇸🇴", "name": {"ar": "الصومال", "en": "Somalia", "fr": "Somalie", "fa": "سومالی", "ms": "Somalia", "ur": "صومالیہ"}, "madhab": "shafii", "population": "18.1M"},
     {"flag": "🇩🇯", "name": {"ar": "جيبوتي", "en": "Djibouti", "fr": "Djibouti", "fa": "جیبوتی", "ms": "Djibouti", "ur": "جبوتی"}, "madhab": "shafii", "population": "1.1M"},
-    {"flag": "🇪🇷", "name": {"ar": "إريتريا", "en": "Eritrea", "fr": "Érythrée", "fa": "اریتره", "ms": "Eritrea", "ur": "اریٹیریا"}, "madhab": "maliki", "population": "3.7M"},
-    {"flag": "🇲🇷", "name": {"ar": "موريتانيا", "en": "Mauritania", "fr": "Mauritanie", "fa": "موریتانی", "ms": "Mauritania", "ur": "موریتانیہ"}, "madhab": "maliki", "population": "5.0M"},
 ]
 
+COUNTRIES_NOTE = {
+    "ar": "ملاحظة: يُقصد بـ«المذهب الرسمي» المذهب الفقهي السائد تاريخياً بين غالبية المسلمين في البلد أو المعتمد في محاكمه الشرعية؛ وقد تتعايش فيه مذاهب أخرى.",
+    "en": "Note: the \"official school\" refers to the madhhab historically prevailing among the country's Muslim majority or followed in its Sharia courts; other schools may coexist there.",
+    "fr": "Remarque : l'« école officielle » désigne le madhhab historiquement prédominant chez la majorité musulmane du pays ou suivi dans ses tribunaux islamiques ; d'autres écoles peuvent y coexister.",
+    "fa": "توجه: «مذهب رسمی» به مذهبی گفته می‌شود که تاریخاً در میان اکثریت مسلمانان آن کشور رایج بوده یا در دادگاه‌های شرعی آن پیروی می‌شود؛ مذاهب دیگر نیز ممکن است در آن حضور داشته باشند.",
+    "ms": "Nota: \"mazhab rasmi\" merujuk kepada mazhab yang secara sejarah dominan dalam kalangan majoriti Muslim negara tersebut atau diikuti di mahkamah syariahnya; mazhab lain mungkin turut wujud.",
+    "ur": "نوٹ: \"سرکاری مذہب\" سے مراد وہ مذہب ہے جو تاریخی طور پر ملک کی مسلم اکثریت میں غالب رہا یا اس کی شرعی عدالتوں میں اپنایا جاتا ہے؛ دیگر مذاہب بھی وہاں موجود ہو سکتے ہیں۔",
+}
+
 # ============================================
-# Fiqh Rules Display Function (Enhanced)
+# UI Components
 # ============================================
 
 def display_fiqh_rules(lang: str, T: Dict) -> None:
     """Display fiqh rules and principles section with multilingual support."""
     
+    # تعريف القواعد مع ترجمات لكل اللغات
     rules_data = {
         "اليقين لا يزول بالشك": {
             "ar": {"definition": "إذا ثبت أمر بيقين فلا يزول إلا بيقين مثله، ولا يؤثر فيه مجرد الشك.",
@@ -1434,449 +1583,38 @@ def display_fiqh_rules(lang: str, T: Dict) -> None:
             "ur": {"definition": "نبوی حدیث پر مبنی: 'نہ نقصان اور نہ نقصان کا بدلہ'۔",
                    "example": "ایسی تعمیر کو روکنا جو پڑوسی کو نقصان پہنچائے۔"}
         },
-        # New rules added
-        "الإجماع": {
-            "ar": {"definition": "اتفاق علماء الأمة في عصر من العصور على حكم شرعي، ويُعتبر من أقوى الأدلة بعد القرآن والسنة.",
-                   "example": "إجماع الصحابة على حرمة الخمر."},
-            "en": {"definition": "Consensus of the scholars of the Muslim community in a given era on a legal ruling; considered one of the strongest proofs after the Qur'an and Sunnah.",
-                   "example": "The consensus of the Companions on the prohibition of wine."},
-            "fr": {"definition": "Consensus des savants de la communauté musulmane à une époque donnée sur une règle juridique ; considéré comme l'une des preuves les plus fortes après le Coran et la Sunna.",
-                   "example": "Le consensus des Compagnons sur l'interdiction du vin."},
-            "fa": {"definition": "اتفاق علماي امت در عصري از اعصار بر حكم شرعي، و از قوي‌ترین ادله بعد از قرآن و سنت محسوب می‌شود.",
-                   "example": "اجماع صحابه بر حرمت خمر."},
-            "ms": {"definition": "Persetujuan ulama umat Islam dalam sesuatu zaman terhadap hukum syarak; dianggap sebagai salah satu dalil terkuat selepas al-Quran dan Sunnah.",
-                   "example": "Ijma' sahabat terhadap pengharaman arak."},
-            "ur": {"definition": "کسی دور میں امت کے علماء کا کسی شرعی حکم پر اتفاق، قرآن و سنت کے بعد قوی ترین دلائل میں سے ہے۔",
-                   "example": "صحابہ کا خمر کی حرمت پر اجماع۔"}
-        },
-        "درء المفاسد مقدم على جلب المصالح": {
-            "ar": {"definition": "إذا تعارضت مصلحة ومفسدة، فإن درء المفسدة أولى من جلب المصلحة.",
-                   "example": "منع بعض العقود التي قد تؤدي إلى الضرر العام."},
-            "en": {"definition": "When a benefit and a harm conflict, preventing the harm takes precedence over bringing the benefit.",
-                   "example": "Prohibiting certain contracts that may lead to public harm."},
-            "fr": {"definition": "Lorsqu'un intérêt et un préjudice sont en conflit, la prévention du préjudice prime sur la réalisation de l'intérêt.",
-                   "example": "Interdire certains contrats qui pourraient nuire au public."},
-            "fa": {"definition": "اگر مصلحت و مفسده با هم تعارض داشته باشند، دفع مفسده بر جلب مصلحت مقدم است.",
-                   "example": "منع برخی قراردادها که ممکن است به ضرر عمومی منجر شود."},
-            "ms": {"definition": "Apabila manfaat dan kemudaratan bercanggah, mencegah kemudaratan lebih utama daripada membawa manfaat.",
-                   "example": "Mengharamkan kontrak tertentu yang mungkin membawa kemudaratan awam."},
-            "ur": {"definition": "اگر مصلحت اور مفسدہ باہم متعارض ہوں تو مفسدہ کا دفع کرنا مصلحت کے حصول پر مقدم ہے۔",
-                   "example": "بعض معاہدوں کو روکنا جو عوامی نقصان کا باعث بن سکتے ہیں۔"}
-        },
         "الأصل في الأشياء الإباحة": {
-            "ar": {"definition": "الأصل في الأشياء والأفعال الإباحة حتى يقوم دليل على التحريم.",
-                   "example": "جواز أكل جميع الأطعمة ما لم يرد نص بتحريمها."},
-            "en": {"definition": "The default ruling for things and actions is permissibility until evidence proves otherwise.",
-                   "example": "Permissibility of all foods unless there is a text prohibiting them."},
-            "fr": {"definition": "Le principe de base pour les choses et les actions est la permission jusqu'à ce qu'une preuve établisse le contraire.",
-                   "example": "La permission de manger tous les aliments à moins qu'un texte ne les interdise."},
-            "fa": {"definition": "اصل در اشیاء و افعال اباحه است تا زمانی که دلیل بر حرمت قائم شود.",
-                   "example": "جواز خوردن همه غذاها مگر اینکه نصی بر حرمت آنها وارد شود."},
-            "ms": {"definition": "Hukum asal bagi sesuatu dan tindakan adalah harus sehingga ada dalil yang menunjukkan sebaliknya.",
-                   "example": "Kebolehan memakan semua makanan kecuali ada nas yang mengharamkannya."},
-            "ur": {"definition": "اشیا اور افعال میں اصل اباحت ہے جب تک کہ حرمت کی کوئی دلیل نہ آئے۔",
-                   "example": "تمام کھانوں کا جائز ہونا جب تک کہ کوئی نص ان کی حرمت پر نہ ہو۔"}
-        }
-    }
-    
-    # Display inside a single expander (no nesting)
-    with st.expander(T["rules_title"]):
-        for i, (rule_name, rule_translations) in enumerate(rules_data.items()):
-            rule_content = rule_translations.get(lang, rule_translations.get("ar", {}))
-            
-            if i > 0:
-                st.markdown("---")
-            
-            st.markdown(f"**📌 {rule_name}**")
-            st.markdown(f"""
-            <div class="info-box">
-                <p><strong>{T['rules_definition']}:</strong> {rule_content.get('definition', '')}</p>
-                <p><strong>{T['rules_example']}:</strong> {rule_content.get('example', '')}</p>
-            </div>
-            """, unsafe_allow_html=True)
-
-# ============================================
-# Main Application
-# ============================================
-
-def main():
-    """Main application entry point."""
-    
-    # Initialize services
-    db = DatabaseManager()
-    ai = AIService()
-    search_service = SearchService(db, ai)
-    ref_manager = ReferenceManager(db, ai)
-    
-    # Initialize session state
-    if "lang" not in st.session_state:
-        st.session_state.lang = "ar"
-    if "session_comments" not in st.session_state:
-        st.session_state.session_comments = []
-    
-    # ========== IMPROVED LANGUAGE BAR & HEADER ==========
-    
-    lang = st.session_state.lang
-    T = UI[lang]
-    
-    # Custom CSS for improved UI
-    st.markdown("""
-    <style>
-        /* Language bar */
-        .lang-container {
-            display: flex;
-            justify-content: flex-end;
-            align-items: center;
-            gap: 15px;
-            background: #f0f4f2;
-            padding: 8px 20px;
-            border-radius: 12px;
-            margin-bottom: 20px;
-            border: 1px solid #d4dcd4;
-        }
-        .lang-label {
-            font-weight: 600;
-            color: #2a5c4a;
-            font-size: 0.95rem;
-            margin-right: 5px;
-        }
-        /* Header */
-        .app-header {
-            text-align: center;
-            padding: 30px 20px 25px;
-            background: linear-gradient(145deg, #0f231c, #2a5c4a);
-            color: white;
-            border-radius: 20px;
-            margin-bottom: 30px;
-            box-shadow: 0 4px 16px rgba(0,0,0,0.15);
-        }
-        .app-header h1 {
-            font-size: 2.4rem;
-            margin-bottom: 8px;
-            font-weight: 700;
-            letter-spacing: 0.5px;
-        }
-        .app-header p {
-            font-size: 1.1rem;
-            opacity: 0.9;
-            margin: 0;
-            font-weight: 300;
-        }
-        .logo-svg {
-            display: block;
-            margin: 0 auto 5px auto;
-        }
-        .info-box {
-            background: #f8f9fa;
-            border-radius: 10px;
-            padding: 12px 16px;
-            margin-bottom: 12px;
-            border-left: 4px solid #2a5c4a;
-        }
-        .country-box {
-            background: #f8f9fa;
-            border-radius: 10px;
-            padding: 12px;
-            margin-bottom: 10px;
-            text-align: center;
-        }
-        .answer-card {
-            background: #f5f7f5;
-            border: 1px solid #e1e7e3;
-            border-radius: 14px;
-            padding: 16px 18px;
-            margin-bottom: 12px;
-        }
-        .answer-card .answer-text {
-            font-size: 1.15rem;
-            font-weight: 600;
-            color: #16281f;
-            margin: 4px 0;
-        }
-        .answer-card .answer-note {
-            font-size: 0.85rem;
-            color: #6a7f78;
-        }
-        .signature {
-            font-family: 'Brush Script MT', cursive;
-            font-style: italic;
-            font-size: 1rem;
-            color: #b08d3f;
-            text-align: center;
-            margin: 6px 0 18px 0;
-        }
-        .stButton button {
-            width: 100%;
-        }
-    </style>
-    """, unsafe_allow_html=True)
-    
-    # Language bar
-    col_lang1, col_lang2 = st.columns([1.5, 4])
-    with col_lang1:
-        st.markdown(f"<div class='lang-label'>{T['lang_label']}</div>", unsafe_allow_html=True)
-    with col_lang2:
-        lang_choice = st.radio(
-            "",
-            list(LANGS.keys()),
-            index=list(LANGS.values()).index(st.session_state.lang),
-            horizontal=True,
-            label_visibility="collapsed",
-            key="lang_selector"
-        )
-        st.session_state.lang = LANGS[lang_choice]
-    
-    # Update lang and T after selection
-    lang = st.session_state.lang
-    T = UI[lang]
-    
-    # Logo and header
-    st.markdown("""
-    <div style="text-align:center; margin-bottom:-2px;" class="logo-svg">
-        <svg width="100" height="100" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
-            <circle cx="60" cy="60" r="56" fill="#0f231c" stroke="#d4a854" stroke-width="3"/>
-            <circle cx="60" cy="60" r="49" fill="none" stroke="#d4a854" stroke-width="0.75" opacity="0.5"/>
-            <path d="M78 20 A15 15 0 1 0 81 47 A11.5 11.5 0 1 1 78 20 Z" fill="#d4a854"/>
-            <path d="M60 50 C46 43 32 45 25 52 V90 C32 83 46 81 60 88 C74 81 88 83 95 90 V52 C88 45 74 43 60 50 Z" fill="none" stroke="#f2e6c9" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round"/>
-            <line x1="60" y1="50" x2="60" y2="88" stroke="#f2e6c9" stroke-width="3"/>
-            <path d="M32 59 Q46 55 58 59" stroke="#f2e6c9" stroke-width="1.4" fill="none" opacity="0.65"/>
-            <path d="M32 67 Q46 63 58 67" stroke="#f2e6c9" stroke-width="1.4" fill="none" opacity="0.65"/>
-            <path d="M32 75 Q46 71 58 75" stroke="#f2e6c9" stroke-width="1.4" fill="none" opacity="0.65"/>
-            <path d="M62 59 Q74 55 88 59" stroke="#f2e6c9" stroke-width="1.4" fill="none" opacity="0.65"/>
-            <path d="M62 67 Q74 63 88 67" stroke="#f2e6c9" stroke-width="1.4" fill="none" opacity="0.65"/>
-            <path d="M62 75 Q74 71 88 75" stroke="#f2e6c9" stroke-width="1.4" fill="none" opacity="0.65"/>
-        </svg>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    st.markdown(f"""
-    <div class="app-header">
-        <h1>📖 {T['app_title']}</h1>
-        <p>{T['app_subtitle']}</p>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    if not USE_GEMINI:
-        st.caption(f"ℹ️ {T['ai_unavailable']}")
-    
-    # Admin: CSV Import
-    with st.expander("📥 استيراد مسائل من CSV (للمشرفين)", expanded=False):
-        st.info("**تنسيق CSV المطلوب:** يجب أن يحتوي على جميع الأعمدة المطابقة لقاعدة البيانات.")
-        uploaded = st.file_uploader("اختر ملف CSV", type=["csv"])
-        if uploaded:
-            try:
-                count = db.import_from_csv(uploaded.read())
-                st.success(f"✅ تم استيراد {count} مسألة بنجاح!")
-            except Exception as e:
-                st.error(f"❌ خطأ: {e}")
-    
-    # RAG Management
-    with st.expander(T["rag_expander"]):
-        if not USE_GEMINI:
-            st.warning(T["ai_unavailable"])
-        st.caption(T["rag_intro"])
-        
-        ref_title = st.text_input(T["rag_title_label"], key="rag_title_input")
-        ref_madhab = st.selectbox(
-            T["rag_madhab_label"],
-            [""] + list(MADHHAB_NAMES.keys()),
-            format_func=lambda c: "—" if c == "" else MADHHAB_NAMES[c][lang],
-            key="rag_madhab_input",
-        )
-        ref_text = st.text_area(T["rag_text_label"], height=150, key="rag_text_input")
-        ref_file = st.file_uploader(T["rag_file_label"], type=["txt"], key="rag_file_input")
-        
-        if st.button(T["rag_submit"], disabled=not USE_GEMINI):
-            content = ref_text.strip()
-            if not content and ref_file:
-                content = ref_file.read().decode("utf-8", errors="ignore").strip()
-            if not content or not ref_title.strip():
-                st.warning(T["rag_empty_warning"])
-            else:
-                with st.spinner(T["rag_processing"]):
-                    n_chunks = ref_manager.add_document(ref_title.strip(), ref_madhab, content)
-                if n_chunks > 0:
-                    st.success(T["rag_success"].format(n_chunks, ref_title.strip()))
-                else:
-                    st.error(T["rag_failed"])
-        
-        st.markdown(f"**{T['rag_current_sources']}**")
-        sources = db.list_reference_sources()
-        if sources:
-            for title, n in sources:
-                st.markdown(f"- {title} ({n})")
-        else:
-            st.caption(T["rag_no_sources"])
-    
-    # Main search interface
-    st.markdown(f"### {T['s1_title']}")
-    group_code = st.radio(
-        T["group_q"],
-        list(GROUPS.keys()),
-        format_func=lambda g: GROUPS[g][lang],
-        horizontal=True,
-        label_visibility="collapsed",
-    )
-    sub_codes = GROUPS[group_code]["members"]
-    st.caption(T["multi_hint"])
-    
-    if len(sub_codes) > 1:
-        selected_madhabs = st.multiselect(
-            T["sub_select"],
-            options=sub_codes,
-            default=[sub_codes[0]],
-            format_func=lambda c: MADHHAB_NAMES[c][lang],
-        )
-    else:
-        selected_madhabs = sub_codes
-        st.caption(f"**{MADHHAB_NAMES[sub_codes[0]][lang]}**")
-    
-    st.divider()
-    st.markdown(f"### {T['s2_title']}")
-    topic = st.radio(
-        T["topic_q"],
-        list(TOPICS.keys()),
-        format_func=lambda t: TOPICS[t][lang],
-        horizontal=True,
-        label_visibility="collapsed",
-    )
-    
-    st.divider()
-    st.markdown(f"### {T['s3_title']}")
-    level = st.radio(
-        T["level_q"],
-        list(LEVELS.keys()),
-        format_func=lambda lv: LEVELS[lv][lang],
-        horizontal=True,
-        label_visibility="collapsed",
-    )
-    
-    st.divider()
-    st.markdown(f"### {T['s4_title']}")
-    question = st.text_input(
-        T["s4_title"], placeholder=T["question_placeholder"], label_visibility="collapsed"
-    )
-    search_clicked = st.button(T["search_btn"], use_container_width=True)
-    
-    st.divider()
-    st.markdown(f"### {T['s5_title']}")
-    
-    # Process search
-    if search_clicked and not selected_madhabs:
-        st.warning(T["no_madhab_warning"])
-    elif search_clicked and question:
-        results = search_service.search(question, topic, selected_madhabs, level, lang, T)
-        ai_used = False
-        rag_used = False
-        
-        # Try RAG if no results
-        if not results and USE_GEMINI:
-            with st.spinner(T["ai_generating"]):
-                chunks = ref_manager.retrieve_relevant_chunks(question, top_k=6)
-                if chunks:
-                    rag_cards = ai.rag_generate_answer(question, lang, selected_madhabs, level, T, chunks)
-                    if rag_cards:
-                        results = [SearchResult(title=question, topic=TOPICS[topic][lang], cards=rag_cards)]
-                        rag_used = True
-        
-        # Try AI generation if no results
-        if not results and USE_GEMINI:
-            with st.spinner(T["ai_generating"]):
-                ai_cards = ai.ai_generate_answer(question, lang, selected_madhabs, level, T)
-                if ai_cards:
-                    results = [SearchResult(title=question, topic=TOPICS[topic][lang], cards=ai_cards)]
-                    ai_used = True
-        
-        # Display results
-        if results:
-            if ai_used:
-                st.warning(T["ai_disclaimer"])
-            for r in results:
-                st.markdown(f"**📌 {r.title}** &nbsp;·&nbsp; _{r.topic}_")
-                cols = st.columns(len(r.cards)) if len(r.cards) > 1 else [st.container()]
-                for col, card in zip(cols, r.cards):
-                    with col:
-                        card_class = "answer-card rag-card" if rag_used else "answer-card ai-card" if ai_used else "answer-card"
-                        st.markdown(f"""
-                        <div class="{card_class}">
-                            <h4>{card['label']}</h4>
-                            <div class="answer-text">{card['answer']}</div>
-                            <div class="answer-note">{card['note']}</div>
-                        </div>
-                        """, unsafe_allow_html=True)
-                st.markdown(f"<div class='signature'>{T['signature']}</div>", unsafe_allow_html=True)
-        else:
-            st.warning(T["no_results_warning"])
-            if not USE_GEMINI:
-                st.caption(T["ai_unavailable"])
-    elif search_clicked:
-        st.info(T["no_question_warning"])
-    else:
-        st.caption(T["answer_placeholder"])
-    
-    st.markdown("---")
-    
-    # Information expanders
-    with st.expander(T["expander_imams"]):
-        for imam in IMAMS:
-            st.markdown(f"""
-            <div class="info-box">
-                <h4>{imam['name'][lang]}</h4>
-                <p style="color:#d4a854; font-weight:600;">{imam['school'][lang]} &nbsp;|&nbsp; {imam['lifespan']}</p>
-                <p>📍 {T['birthplace']}: {imam['birthplace'][lang]} &nbsp;·&nbsp; 🏛️ {T['founding_place']}: {imam['founding_place'][lang]}</p>
-                <p>🎓 {T['scholars']}: {imam['scholars'][lang]}</p>
-            </div>
-            """, unsafe_allow_html=True)
-    
-    with st.expander(T["expander_countries"]):
-        cols = st.columns(3)
-        for i, c in enumerate(COUNTRIES):
-            with cols[i % 3]:
-                st.markdown(f"""
-                <div class="country-box">
-                    <strong>{c['flag']} {c['name'][lang]}</strong><br>
-                    <span style="color:#d4a854;">{T['official_madhab']}: {MADHHAB_NAMES[c['madhab']][lang]}</span><br>
-                    <span style="font-size:0.8rem; color:#6a7f78;">👥 {T['population']}: {c['population']}</span>
-                </div>
-                """, unsafe_allow_html=True)
-    
-    with st.expander(T["expander_glossary"]):
-        for term in GLOSSARY:
-            st.markdown(f"""
-            <div class="info-box">
-                <h4>{term['term'][lang]}</h4>
-                <p>{term['definition'][lang]}</p>
-            </div>
-            """, unsafe_allow_html=True)
-    
-    # Display Fiqh Rules (enhanced)
-    display_fiqh_rules(lang, T)
-    
-    # Comments section
-    with st.expander(T["expander_comments"]):
-        st.markdown(f"**{T['rating_label']}**")
-        try:
-            rating = st.feedback("stars")
-            if rating is not None:
-                rating = rating + 1
-        except:
-            rating = st.radio(T["rating_label"], [1, 2, 3, 4, 5], format_func=lambda n: "⭐" * n, horizontal=True, label_visibility="collapsed")
-        
-        comment_text = st.text_area(T["comment_placeholder"], placeholder=T["comment_placeholder"], label_visibility="collapsed")
-        
-        if st.button(T["comment_submit"]):
-            if comment_text.strip():
-                st.session_state.session_comments.append({"text": comment_text.strip(), "rating": rating or 5})
-                st.success(T["comment_success"])
-            else:
-                st.warning(T["comment_warning"])
-        
-        if st.session_state.session_comments:
-            st.markdown(f"**{T['comments_title']}**")
-            for c in st.session_state.session_comments:
-                st.markdown(f"- {'⭐' * int(c['rating'])} — {c['text']}")
-        st.caption(T["comments_note"])
-
-
-if __name__ == "__main__":
-    main()
+            "ar": {"definition": "كل شيء لم يرد نص بتحريمه فحكمه الأصلي الإباحة، حتى يقوم دليل شرعي على المنع.",
+                   "example": "إباحة الأطعمة والمشروبات والمعاملات المستحدثة ما لم يثبت فيها محذور شرعي."},
+            "en": {"definition": "Anything not explicitly prohibited by a text is presumed permissible until evidence establishes otherwise.",
+                   "example": "New foods, drinks, or transactions remain permissible unless a specific prohibition is shown."},
+            "fr": {"definition": "Tout ce qui n'est pas explicitement interdit par un texte est présumé permis, jusqu'à preuve du contraire.",
+                   "example": "Les nouveaux aliments ou transactions restent licites tant qu'aucune interdiction précise n'est établie."},
+            "fa": {"definition": "هر چیزی که نص صریحی بر تحریم آن نیامده، اصل در آن اباحه است تا دلیلی بر منع بیاید.",
+                   "example": "اباحه خوراکی‌ها و معاملات جدید تا زمانی که محذور شرعی در آن‌ها ثابت نشود."},
+            "ms": {"definition": "Sesuatu yang tiada nas jelas mengharamkannya, hukum asalnya harus sehingga ada dalil yang melarangnya.",
+                   "example": "Makanan, minuman, dan urus niaga baharu kekal harus selagi tiada larangan syarak yang jelas."},
+            "ur": {"definition": "جس چیز کی حرمت پر واضح نص نہ ہو، اس کا اصل حکم اباحت ہے جب تک ممانعت کی دلیل نہ آئے۔",
+                   "example": "نئے کھانوں، مشروبات اور معاملات کا جواز جب تک ان میں شرعی ممانعت ثابت نہ ہو۔"}
+        },
+        "الأصل براءة الذمة": {
+            "ar": {"definition": "الأصل أن يبقى الإنسان غير مطالَب بحق أو التزام تجاه غيره حتى يثبت خلاف ذلك بدليل معتبر.",
+                   "example": "من ادّعى ديناً على آخر فالبيّنة عليه؛ لأن الأصل براءة ذمة المدَّعى عليه."},
+            "en": {"definition": "A person is presumed free of any claim or liability until proven otherwise by valid evidence.",
+                   "example": "Whoever claims a debt against another must provide proof, since the defendant is presumed free of liability."},
+            "fr": {"definition": "Une personne est présumée libre de toute obligation jusqu'à preuve valable du contraire.",
+                   "example": "Celui qui prétend qu'une dette lui est due doit en apporter la preuve, l'accusé étant présumé sans dette."},
+            "fa": {"definition": "اصل این است که انسان تا اثبات خلاف آن با دلیل معتبر، از هیچ حق یا تعهدی نسبت به دیگری مسئول نیست.",
+                   "example": "هر کس ادعای دِینی بر دیگری کند، اثبات آن بر عهده اوست؛ زیرا اصل برائت ذمه مدعی‌علیه است."},
+            "ms": {"definition": "Pada asalnya seseorang bebas daripada sebarang tuntutan atau tanggungan sehingga terbukti sebaliknya dengan bukti sah.",
+                   "example": "Sesiapa mendakwa hutang ke atas orang lain wajib membawa bukti, kerana asalnya tertuduh bebas tanggungan."},
+            "ur": {"definition": "اصل یہ ہے کہ انسان کسی حق یا ذمہ داری سے بری رہتا ہے جب تک معتبر دلیل سے اس کے خلاف ثابت نہ ہو۔",
+                   "example": "جو کسی پر قرض کا دعویٰ کرے، ثبوت اسی کے ذمہ ہے؛ کیونکہ اصل مدعا علیہ کی برأت ہے۔"}
+        },
+        "الاستحسان": {
+            "ar": {"definition": "العدول عن مقتضى قياس ظاهر إلى حكم آخر يقتضيه دليل أقوى، كنص خاص أو عرف أو ضرورة، تحقيقاً لمصلحة راجحة.",
+                   "example": "جواز عقد الاستصناع استحساناً، وإن كان القياس الظاهر يقتضي منعه لكون المصنوع معدوماً وقت العقد."},
+            "en": {"definition": "Departing from an apparent analogy toward a ruling supported by stronger evidence — a specific text, custom, or necessity — to serve a preponderant benefit.",
+                   "example": "Permitting the manufacturing contract (istisna') by juristic preference, though strict analogy would forbid selling a non-existent item."},
+            "fr": {"definition": "S'écarter d'une analogie apparente vers un jugement fondé sur une preuve plus forte — texte spécifique, coutume ou nécessité — pour un intérêt supérieur.",
+                   "ex
